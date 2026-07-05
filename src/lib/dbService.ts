@@ -11,7 +11,7 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const contentType = res.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
     throw new Error(
-      `Expected JSON from ${path} but got HTML. Run "npm run dev" (not vite alone) and restart the server after code changes.`
+      `Expected JSON from ${path} but got HTML. Restart the app server and try again.`
     );
   }
   const body = await res.json();

@@ -354,8 +354,8 @@ export default function AdminDashboard({
       setStatusMsg({
         type: status.hasErrors ? 'error' : 'success',
         text: status.hasErrors
-          ? `Reload finished with ${status.totalErrors} issue(s). Check input_data/ files or use Bulk Upload.`
-          : `Reloaded ${status.totalSuccess} menu items from input_data/.`,
+          ? `Reload finished with ${status.totalErrors} issue(s). Check menu import files or use Bulk Upload.`
+          : `Reloaded ${status.totalSuccess} menu items from import files.`,
       });
     } catch (err: any) {
       setStatusMsg({ type: 'error', text: err.message || 'Reload failed.' });
@@ -547,7 +547,7 @@ export default function AdminDashboard({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-serif italic text-noir-text tracking-tight">Business Executive Control Room</h2>
-          <p className="text-xs text-noir-dim font-mono">Live database mode: {dbService.isSupabaseConnected() ? '⚡ Connected to Supabase' : '💾 Fallback Local Browser DB'}</p>
+          <p className="text-xs text-noir-dim font-mono">Connection: {dbService.isSupabaseConnected() ? '⚡ Cloud store connected' : '💾 Local demo mode'}</p>
         </div>
         
         <div className="flex flex-wrap gap-2.5">
@@ -565,7 +565,7 @@ export default function AdminDashboard({
           {!dbService.isSupabaseConnected() && (
             <div className="bg-amber-950/40 border border-amber-900/40 text-amber-300 px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5">
               <AlertTriangle className="w-4 h-4 text-amber-400" />
-              <span>Connect Supabase in Secrets for cloud syncing</span>
+              <span>Cloud storage is not configured — some features may be limited</span>
             </div>
           )}
         </div>
@@ -596,7 +596,7 @@ export default function AdminDashboard({
         <div className="rounded-xl border border-purple-900/30 bg-purple-950/20 p-4 text-xs text-purple-100 space-y-2">
           <p className="font-semibold text-purple-200">User Management</p>
           <p>Add staff or admin accounts by email. Login instructions are emailed to the user only — admins never see the temporary password.</p>
-          <p>Every new user must set a new password on first login. The first admin account must still be created once in Supabase Console.</p>
+          <p>Every new user must set a new password on first login. The first admin account must be set up by your system administrator before using User Management here.</p>
         </div>
       )}
 
@@ -1210,9 +1210,7 @@ export default function AdminDashboard({
               <h3 className="text-lg font-serif italic text-noir-gold">Pizza & Master Menu (Master Table)</h3>
               <p className="text-xs text-noir-muted">Manage pizza recipes, customized bases, and topping snapshots.</p>
               <p className="text-[10px] text-noir-dim mt-1">
-                On server startup: <span className="font-mono text-noir-text">input_data/Types_of_Base.txt</span>,{' '}
-                <span className="font-mono text-noir-text">Types_of_Pizza.txt</span>,{' '}
-                <span className="font-mono text-noir-text">Types_of_Toppings.txt</span> (semicolon-separated; CSV fallback).
+                On server startup, menu import files (bases, pizzas, toppings) are loaded automatically.
               </p>
             </div>
             
@@ -1224,7 +1222,7 @@ export default function AdminDashboard({
                 className="px-3.5 py-1.5 bg-noir-highlight hover:bg-noir-sidebar text-noir-text rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer border border-noir-border disabled:opacity-50"
               >
                 <RefreshCw className={`w-4 h-4 text-noir-gold ${menuReloading ? 'animate-spin' : ''}`} />
-                Reload input_data
+                Reload menu import
               </button>
               <button
                 onClick={() => { setShowAddForm(!showAddForm); setShowBulkUpload(false); }}
@@ -1476,7 +1474,7 @@ export default function AdminDashboard({
               <SlidersHorizontal className="w-5 h-5" /> Store Settings
             </h3>
             <p className="text-xs text-noir-muted mt-1">
-              Configure billing rules for the pizzeria. Values are stored in the database — no SQL required here.
+              Configure billing rules for the pizzeria. Changes apply to new orders immediately.
             </p>
           </div>
 
@@ -1559,7 +1557,7 @@ export default function AdminDashboard({
                   ...f.errors.map(e => `${f.file}: ${e}`),
                 ])}
               </ul>
-              <p className="text-amber-200/80">Fix files in input_data/ and use Reload input_data on the Menu tab, or Bulk Upload corrected files.</p>
+              <p className="text-amber-200/80">Fix the menu import files and use Reload menu import on the Menu tab, or Bulk Upload corrected files.</p>
             </div>
           )}
         </div>

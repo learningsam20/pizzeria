@@ -102,7 +102,7 @@ export default function App() {
 
   const resolveStaffSession = async (userId: string, email: string) => {
     const supabase = getSupabase();
-    if (!supabase) throw new Error('Supabase is not connected.');
+    if (!supabase) throw new Error('Cloud sign-in is not available.');
 
     const { data, error } = await supabase
       .from('profiles')
@@ -216,10 +216,10 @@ export default function App() {
     }
 
     if (err?.status === 500 || lower.includes('internal server error') || lower.includes('fetch failed')) {
-      return 'Supabase is temporarily rejecting the sign-in request. Please try again in a moment or confirm the account exists.';
+      return 'Sign-in is temporarily unavailable. Please try again in a moment or confirm your account exists.';
     }
 
-    return message || 'Unable to sign in with the provided Supabase account.';
+    return message || 'Unable to sign in. Check your email and password.';
   };
 
   const handleStaffLogin = async (e: React.FormEvent) => {
@@ -233,7 +233,7 @@ export default function App() {
 
     const supabase = getSupabase();
     if (!supabase) {
-      setAuthError('Supabase is not connected.');
+      setAuthError('Cloud sign-in is not available. Contact your administrator.');
       return;
     }
 
@@ -288,7 +288,7 @@ export default function App() {
 
     const supabase = getSupabase();
     if (!supabase) {
-      setPasswordChangeError('Supabase is not connected.');
+      setPasswordChangeError('Cloud sign-in is not available. Contact your administrator.');
       return;
     }
 
@@ -357,7 +357,7 @@ export default function App() {
               <h1 className="font-serif text-lg font-bold tracking-tight text-noir-text leading-none flex items-center gap-1.5">
                 Slice of Heaven <span className="text-noir-gold text-[10px] font-mono uppercase bg-noir-highlight px-1.5 py-0.5 rounded border border-noir-gold-o20">Pizzeria Noir</span>
               </h1>
-              <p className="text-[9px] text-noir-dim mt-1 font-mono uppercase tracking-widest">Postgres & AI Intelligence</p>
+              <p className="text-[9px] text-noir-dim mt-1 font-mono uppercase tracking-widest">Orders · Kitchen · Service</p>
             </div>
           </div>
 
@@ -463,7 +463,7 @@ export default function App() {
           <div className="mb-6 rounded-xl border border-amber-900/40 bg-amber-950/30 p-4 text-sm text-amber-200 space-y-2">
             <div className="flex items-start gap-2 font-semibold text-amber-100">
               <AlertTriangle className="w-5 h-5 shrink-0 text-amber-400" />
-              <span>Some menu files in <code className="text-amber-300">input_data/</code> could not be loaded at startup.</span>
+              <span>Some menu import files could not be loaded at startup.</span>
             </div>
             <p className="text-xs text-amber-200/90">
               The app will continue running. Correct the files below and re-upload them via <strong>Admin → Pizza &amp; Master Menu → Bulk Upload</strong> after sign-in, or replace the files and restart the server.
@@ -481,7 +481,7 @@ export default function App() {
         {loading ? (
           <div className="flex flex-col items-center justify-center py-24 text-noir-dim space-y-3.5">
             <RefreshCw className="w-10 h-10 text-noir-gold animate-spin" />
-            <p className="text-xs font-mono tracking-widest uppercase">Initializing connection systems...</p>
+            <p className="text-xs font-mono tracking-widest uppercase">Loading menu and orders…</p>
           </div>
         ) : activeRole === 'help' ? (
           <AppHelp />
@@ -574,7 +574,7 @@ export default function App() {
                   disabled={authLoading}
                   className="w-full py-2.5 bg-noir-gold hover:bg-noir-gold-hover disabled:opacity-70 text-black font-semibold text-xs rounded-xl transition-all cursor-pointer shadow-md"
                 >
-                  {authLoading ? 'Signing in…' : 'Sign in with Supabase'}
+                  {authLoading ? 'Signing in…' : 'Sign in'}
                 </button>
               </form>
             )}
@@ -645,8 +645,8 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 text-xs text-noir-dim space-y-1.5 font-mono">
           <p>© 2026 Slice of Heaven Pizzeria Ltd. All rights reserved.</p>
           <p className="text-[10px] tracking-wider">
-            Connected to: {supabaseConnected ? '⚡ Supabase Postgres Cloud' : '💾 Local Web Storage Engine'}
-            {config.hasGemini ? ' • 💬 Gemini AI Engine Online' : ' • ⚠️ Gemini AI Key Offline'}
+            Service status: {supabaseConnected ? '⚡ Cloud connected' : '💾 Offline demo mode'}
+            {config.hasGemini ? ' • 💬 Support chat available' : ' • ⚠️ Support chat unavailable'}
           </p>
         </div>
       </footer>

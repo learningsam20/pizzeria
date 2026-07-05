@@ -485,7 +485,7 @@ export default function StaffDashboard({ orders, tables, appSettings = DEFAULT_A
             <h3 className="font-serif text-noir-text text-sm">Table QR Link Generator</h3>
           </div>
           
-          <p className="text-xs text-noir-muted">Select a dine-in table from your database to generate its self-ordering link.</p>
+          <p className="text-xs text-noir-muted">Select a dine-in table to generate its self-ordering link.</p>
 
           <div className="space-y-1">
             <label htmlFor="qr-table-select" className="block text-[10px] font-bold text-noir-dim uppercase tracking-wider">Dine-In Table</label>
@@ -541,7 +541,7 @@ export default function StaffDashboard({ orders, tables, appSettings = DEFAULT_A
                 </p>
               </>
             ) : (
-              <p className="text-xs text-noir-dim italic py-6">Load table_info rows from Supabase to generate QR links.</p>
+              <p className="text-xs text-noir-dim italic py-6">No tables configured yet. Add tables in Admin to generate QR links.</p>
             )}
           </div>
 
@@ -574,11 +574,11 @@ export default function StaffDashboard({ orders, tables, appSettings = DEFAULT_A
           </div>
           <div className="text-xs space-y-1 font-mono text-noir-muted">
             <p>Fulfillment Agent: <strong className="text-noir-text">{staffName}</strong></p>
-            <p>UUID Ref: {staffId.slice(0, 18)}...</p>
+            <p>Staff ID: {staffId.slice(0, 18)}...</p>
             <p>Shift Opened: {new Date().toLocaleDateString()}</p>
           </div>
           <p className="text-[10px] text-noir-dim font-sans leading-relaxed">
-            All database modifications will log your Staff UUID as the primary prepared officer inside the analytical kitchen records.
+            Orders you update are recorded under your staff profile for kitchen analytics.
           </p>
         </div>
       </div>

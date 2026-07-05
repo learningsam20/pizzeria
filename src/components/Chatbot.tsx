@@ -67,7 +67,7 @@ export default function Chatbot({ currentOrders, menuItems, isAdmin }: ChatbotPr
       });
       const data = await res.json();
       if (data.success) {
-        setUploadStatus('km.txt saved successfully!');
+        setUploadStatus('Knowledge base updated successfully!');
         fetchKbStatus();
       } else {
         setUploadStatus('Failed: ' + data.error);
@@ -105,7 +105,7 @@ export default function Chatbot({ currentOrders, menuItems, isAdmin }: ChatbotPr
     setDragOver(false);
     const file = e.dataTransfer.files?.[0];
     if (file && file.type === 'text/plain') readAndUploadFile(file);
-    else alert('Only plain text (.txt) files are supported for km.txt knowledge base.');
+    else alert('Only plain text (.txt) files are supported for the knowledge base.');
   };
 
   const handleSendMessage = async (textToSend?: string) => {
@@ -175,7 +175,7 @@ export default function Chatbot({ currentOrders, menuItems, isAdmin }: ChatbotPr
           <div>
             <h3 className="font-serif italic text-noir-gold text-base tracking-tight">Slice of Heaven Support</h3>
             <p className="text-[10px] text-noir-muted font-mono">
-              Powered by Gemini{sessionStartedAt ? ` · Session ${new Date(sessionStartedAt).toLocaleTimeString()}` : ''}
+              Support assistant{sessionStartedAt ? ` · Session ${new Date(sessionStartedAt).toLocaleTimeString()}` : ''}
             </p>
           </div>
         </div>
@@ -294,9 +294,9 @@ export default function Chatbot({ currentOrders, menuItems, isAdmin }: ChatbotPr
         <div className="flex-1 overflow-y-auto p-6 bg-noir-panel space-y-6">
           <div className="flex items-center justify-between border-b border-noir-border pb-3">
             <div>
-              <h4 className="font-serif italic text-noir-gold text-base">Knowledge Base (app-help.md)</h4>
+              <h4 className="font-serif italic text-noir-gold text-base">Help knowledge base</h4>
               <p className="text-xs text-noir-muted mt-1">
-                Loaded from <code className="text-noir-text">docs/app-help.md</code> at server startup. Install and deployment: <code className="text-noir-text">docs/setup.md</code>.
+                Answers are based on the App Help guide. Uploads here override the guide until the next app restart.
               </p>
             </div>
             <button onClick={fetchKbStatus} className="p-1.5 text-noir-dim hover:text-noir-gold hover:bg-noir-highlight rounded-lg border border-noir-border" title="Refresh">
@@ -324,7 +324,7 @@ export default function Chatbot({ currentOrders, menuItems, isAdmin }: ChatbotPr
 
           <div className="space-y-3">
             <label className="block text-sm font-medium text-noir-text">Override knowledge base (optional)</label>
-            <p className="text-[10px] text-noir-dim">Uploads here replace km.txt until the next server restart, when app-help.md is synced again.</p>
+            <p className="text-[10px] text-noir-dim">Temporary uploads are replaced when the app restarts and the help guide is reloaded.</p>
             <div
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
@@ -334,7 +334,7 @@ export default function Chatbot({ currentOrders, menuItems, isAdmin }: ChatbotPr
               }`}
             >
               <Upload className="w-8 h-8 text-noir-dim mx-auto mb-2" />
-              <p className="text-xs font-medium text-noir-muted mb-3">Drag & drop km.txt or choose a file</p>
+              <p className="text-xs font-medium text-noir-muted mb-3">Drag & drop a .txt file or choose a file</p>
               <input type="file" accept=".txt" onChange={handleFileUpload} className="hidden" id="file-kb-upload" />
               <label htmlFor="file-kb-upload" className="px-3.5 py-1.5 bg-noir-highlight hover:bg-noir-sidebar text-xs text-noir-gold rounded-lg cursor-pointer border border-noir-gold-o20 font-medium inline-block">
                 Select File
