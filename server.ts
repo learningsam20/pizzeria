@@ -34,10 +34,36 @@ const app = express();
 app.use(express.json({ limit: "10mb" }));
 
 const PORT = 3000;
-const KM_FILE_PATH = path.join(process.cwd(), "km.txt");
 const APP_HELP_PATH = path.join(process.cwd(), "docs", "app-help.md");
-const OUTPUT_DIR = path.join(process.cwd(), "output");
-const ORDERS_LOG_PATH = path.join(OUTPUT_DIR, "order_log.txt");
+
+/** Vercel/serverless: only /tmp is writable; project dir is read-only. */
+function isServerlessHost(): boolean {
+  return Boolean(process.env.VERCEL);
+}
+
+function getWritableBase(): string {
+  return isServerlessHost() ? path.join("/tmp", "pizzeria") : process.cwd();
+}
+
+function getKmFilePath(): string {
+  return path.join(getWritableBase(), "km.txt");
+}
+
+function getOutputDir(): string {
+  return path.join(getWritableBase(), "output");
+}
+
+function getOrdersLogPath(): string {
+  return path.join(getOutputDir(), "order_log.txt");
+}
+
+function ensureWritableBase() {
+  try {
+    fs.mkdirSync(getWritableBase(), { recursive: true });
+  } catch (err) {
+    console.warn("Could not create writable base directory:", err);
+  }
+}
 
 // In-memory store for fallback data (when Supabase is not connected yet)
 // This ensures that even in local-only demo mode, order status and menu items can be resolved by the chatbot!
@@ -155,7 +181,12 @@ function resolveTableName(row: any, fallbackId?: number | null): string {
 }
 
 function ensureOutputDir() {
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  ensureWritableBase();
+  try {
+    fs.mkdirSync(getOutputDir(), { recursive: true });
+  } catch (err) {
+    console.warn("Could not create output directory:", err);
+  }
 }
 
 function formatLogInr(value: unknown): string {
@@ -167,19 +198,26 @@ function appendOrderLog(
   items: Record<string, unknown>[],
   tableName?: string
 ) {
-  ensureOutputDir();
-
-  if (!fs.existsSync(ORDERS_LOG_PATH)) {
-    const header = [
-      "================================================================================",
-      " SLICE OF HEAVEN PIZZERIA — COMPLETED ORDERS LOG",
-      " Location: output/order_log.txt",
-      " Each block = one delivered order (payment collected). Times shown in IST.",
-      "================================================================================",
-      "",
-    ].join("\n");
-    fs.writeFileSync(ORDERS_LOG_PATH, header, "utf-8");
+  if (isServerlessHost()) {
+    // Order log files are ephemeral on Vercel (/tmp); Supabase is the source of truth.
+    return;
   }
+
+  try {
+    ensureOutputDir();
+    const logPath = getOrdersLogPath();
+
+    if (!fs.existsSync(logPath)) {
+      const header = [
+        "================================================================================",
+        " SLICE OF HEAVEN PIZZERIA — COMPLETED ORDERS LOG",
+        " Location: output/order_log.txt",
+        " Each block = one delivered order (payment collected). Times shown in IST.",
+        "================================================================================",
+        "",
+      ].join("\n");
+      fs.writeFileSync(logPath, header, "utf-8");
+    }
 
   const ts = String(order.delivered_at || new Date().toISOString());
   const dt = new Date(ts);
@@ -226,7 +264,10 @@ function appendOrderLog(
     .filter((line) => line !== null)
     .join("\n");
 
-  fs.appendFileSync(ORDERS_LOG_PATH, block, "utf-8");
+    fs.appendFileSync(logPath, block, "utf-8");
+  } catch (err) {
+    console.warn("Could not append order log:", err);
+  }
 }
 
 function loadKnowledgeBase(): string {
@@ -237,9 +278,9 @@ function loadKnowledgeBase(): string {
       console.error("Error reading docs/app-help.md:", err);
     }
   }
-  if (fs.existsSync(KM_FILE_PATH)) {
+  if (fs.existsSync(getKmFilePath())) {
     try {
-      return fs.readFileSync(KM_FILE_PATH, "utf-8");
+      return fs.readFileSync(getKmFilePath(), "utf-8");
     } catch (err) {
       console.error("Error reading km.txt:", err);
     }
@@ -250,11 +291,12 @@ function loadKnowledgeBase(): string {
 function syncAppHelpToKnowledgeBase() {
   if (!fs.existsSync(APP_HELP_PATH)) return;
   try {
+    ensureWritableBase();
     const content = fs.readFileSync(APP_HELP_PATH, "utf-8");
-    fs.writeFileSync(KM_FILE_PATH, content, "utf-8");
-    console.log("Synced docs/app-help.md → km.txt for chatbot knowledge base.");
+    fs.writeFileSync(getKmFilePath(), content, "utf-8");
+    console.log("Synced docs/app-help.md → km cache for chatbot knowledge base.");
   } catch (err) {
-    console.warn("Could not sync app-help.md to km.txt:", err);
+    console.warn("Could not sync app-help.md to km cache:", err);
   }
 }
 
@@ -427,9 +469,9 @@ async function initializeServer() {
   // KB Status
   app.get("/api/km-status", (req, res) => {
     try {
-      if (fs.existsSync(KM_FILE_PATH)) {
-        const stats = fs.statSync(KM_FILE_PATH);
-        const content = fs.readFileSync(KM_FILE_PATH, "utf-8");
+      if (fs.existsSync(getKmFilePath())) {
+        const stats = fs.statSync(getKmFilePath());
+        const content = fs.readFileSync(getKmFilePath(), "utf-8");
         res.json({
           exists: true,
           sizeBytes: stats.size,
@@ -456,7 +498,8 @@ async function initializeServer() {
       if (!text || typeof text !== "string") {
         return res.status(400).json({ error: "Invalid text data received" });
       }
-      fs.writeFileSync(KM_FILE_PATH, text, "utf-8");
+      ensureWritableBase();
+      fs.writeFileSync(getKmFilePath(), text, "utf-8");
       res.json({ success: true, message: "km.txt saved successfully!" });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -1336,7 +1379,9 @@ ${contextualData}
   });
 
   syncAppHelpToKnowledgeBase();
-  ensureOutputDir();
+  if (!isServerlessHost()) {
+    ensureOutputDir();
+  }
 
   await loadAppSettingsFromDb().catch(() => {});
   await importMenuFromInputData().catch((err) => {
