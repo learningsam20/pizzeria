@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Slice of Heaven favicon">
+  <rect width="64" height="64" rx="12" fill="#111111"/>
+  <path d="M18 22c0-6 4-10 10-10h8c6 0 10 4 10 10v2c0 6-4 10-10 10h-8c-6 0-10-4-10-10z" fill="#c5a059"/>
+  <path d="M18 34c0 6 4 10 10 10h8c6 0 10-4 10-10v-2H18z" fill="#f7d27d"/>
+  <path d="M20 42h24" stroke="#f7d27d" stroke-width="3" stroke-linecap="round"/>
+  <path d="M24 18c2-3 4-4 6-4 2 0 4 1 6 4" stroke="#111111" stroke-width="2" stroke-linecap="round"/>
+</svg>

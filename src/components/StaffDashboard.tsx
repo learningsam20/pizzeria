@@ -1,30 +1,58 @@
+// @ts-ignore: missing React type declarations in this environment
 import React, { useState, useEffect } from 'react';
 import { 
   CheckCircle, Play, Flame, Send, XCircle, Clock, Table, QrCode, ClipboardList, Filter, Copy, ExternalLink 
 } from 'lucide-react';
-import { OrderWithItems, Order } from '../types';
+import { OrderWithItems, Order, DineInTable, tableQrNumber, AppSettings } from '../types';
 import { dbService } from '../lib/dbService';
+import { orderDisplayStatus, billSummaryLines } from '../lib/orderUtils';
+import { bulkDiscountLabel, gstLabel, DEFAULT_APP_SETTINGS } from '../lib/appSettings';
+import BillSummary from './BillSummary';
+
+function isWalkInPhone(phone: string | null | undefined): boolean {
+  return !!phone && /^6000000\d{3}$/.test(phone);
+}
 
 interface StaffDashboardProps {
   orders: OrderWithItems[];
+  tables: DineInTable[];
+  appSettings?: AppSettings;
   onRefresh: () => void;
   staffId: string;
   staffName: string;
 }
 
-export default function StaffDashboard({ orders, onRefresh, staffId, staffName }: StaffDashboardProps) {
-  const [statusFilter, setStatusFilter] = useState<'open' | 'confirmed' | 'preparing' | 'ready' | 'delivered' | 'cancelled' | 'all'>('open');
+export default function StaffDashboard({ orders, tables, appSettings = DEFAULT_APP_SETTINGS, onRefresh, staffId, staffName }: StaffDashboardProps) {
+  const [statusFilter, setStatusFilter] = useState<'open' | 'confirmed' | 'preparing' | 'ready' | 'ready_to_bill' | 'delivered' | 'cancelled' | 'all'>('open');
   
   // QR Generator States
-  const [selectedTable, setSelectedTable] = useState(1);
+  const [selectedTableName, setSelectedTableName] = useState('');
   const [qrUrl, setQrUrl] = useState('');
   const [copied, setCopied] = useState(false);
+
+  const selectedTable = tables.find(t => t.table_name === selectedTableName) ?? tables[0] ?? null;
+
+  useEffect(() => {
+    if (tables.length > 0 && !tables.some(t => t.table_name === selectedTableName)) {
+      setSelectedTableName(tables[0].table_name);
+    }
+  }, [tables, selectedTableName]);
 
   // Cancellation Modal States
   const [cancellingOrderId, setCancellingOrderId] = useState<number | null>(null);
   const [cancelReason, setCancelReason] = useState('Customer changed mind');
   const [customReason, setCustomReason] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Bill & payment modal (for ready_to_bill orders only — after Mark Served)
+  const [billingOrderId, setBillingOrderId] = useState<number | null>(null);
+  const [billingPaymentMode, setBillingPaymentMode] = useState<'Cash' | 'Card' | 'UPI'>('Cash');
+  // Back-compat aliases (HMR may briefly reference old names after rename)
+  const deliveringOrderId = billingOrderId;
+  const setDeliveringOrderId = setBillingOrderId;
+  const deliveryPaymentMode = billingPaymentMode;
+  const setDeliveryPaymentMode = setBillingPaymentMode;
 
   // Auto-refresh timers to show live clock ticks for orders waiting in queue!
   const [timeTicker, setTimeTicker] = useState(new Date());
@@ -33,14 +61,21 @@ export default function StaffDashboard({ orders, onRefresh, staffId, staffName }
     return () => clearInterval(timer);
   }, []);
 
-  // Update QR link as table number or hostname changes
+  // Update QR link as table selection or hostname changes
   useEffect(() => {
+    if (!selectedTable) {
+      setQrUrl('');
+      return;
+    }
     const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
-    setQrUrl(`${origin}?table=${selectedTable}&source=qr`);
+    setQrUrl(`${origin}?table=${tableQrNumber(selectedTable)}&source=qr`);
   }, [selectedTable]);
 
-  // Handle flow transitions
-  const handleTransition = async (orderId: number, nextStatus: 'preparing' | 'ready' | 'delivered') => {
+  const billingOrder = billingOrderId ? orders.find(o => o.id === billingOrderId) ?? null : null;
+
+  const effectiveStatus = (order: OrderWithItems): Order['status'] => orderDisplayStatus(order);
+
+  const handleTransition = async (orderId: number, nextStatus: 'preparing' | 'ready') => {
     setErrorMsg(null);
     try {
       await dbService.updateOrderStatus(orderId, nextStatus, null, staffId);
@@ -49,6 +84,42 @@ export default function StaffDashboard({ orders, onRefresh, staffId, staffName }
       setErrorMsg(err.message);
     }
   };
+
+  const handleMarkServed = async (orderId: number) => {
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    const order = orders.find(o => o.id === orderId);
+    if (!order || order.status !== 'ready') return;
+    try {
+      await dbService.updateOrderStatus(orderId, 'ready_to_bill', null, staffId);
+      setSuccessMsg(`Order #${orderId} marked as served. You can now collect payment.`);
+      onRefresh();
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+
+  const openBillingModal = (orderId: number) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order || effectiveStatus(order) !== 'ready_to_bill') return;
+    setBillingOrderId(orderId);
+    setBillingPaymentMode(order.payment_mode || 'Cash');
+  };
+
+  const handleConfirmBilling = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!billingOrderId) return;
+    setErrorMsg(null);
+    try {
+      const result = await dbService.updateOrderStatus(billingOrderId, 'delivered', null, staffId, billingPaymentMode);
+      setBillingOrderId(null);
+      setSuccessMsg((result as any).confirmationMessage || `Payment confirmed via ${billingPaymentMode}.`);
+      onRefresh();
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    }
+  };
+  const handleConfirmDelivery = handleConfirmBilling;
 
   const handleCancelSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -96,12 +167,35 @@ export default function StaffDashboard({ orders, onRefresh, staffId, staffName }
 
   // Filter logic
   const filteredOrders = orders.filter(o => {
+    const status = effectiveStatus(o);
     if (statusFilter === 'all') return true;
     if (statusFilter === 'open') {
-      return o.status === 'confirmed' || o.status === 'preparing' || o.status === 'ready';
+      return status === 'confirmed' || status === 'preparing' || status === 'ready' || status === 'ready_to_bill';
     }
-    return o.status === statusFilter;
+    return status === statusFilter;
   });
+
+  const openQueueCount = orders.filter(o => {
+    const s = effectiveStatus(o);
+    return s === 'confirmed' || s === 'preparing' || s === 'ready' || s === 'ready_to_bill';
+  }).length;
+
+  const readyToBillCount = orders.filter(o => effectiveStatus(o) === 'ready_to_bill').length;
+
+  const statusLabel = (status: Order['status']) => {
+    if (status === 'ready_to_bill') return 'Ready to Bill';
+    if (status === 'ready') return 'Ready';
+    return status.charAt(0).toUpperCase() + status.slice(1);
+  };
+
+  const statusBadgeClass = (status: Order['status']) => {
+    if (status === 'confirmed') return 'bg-blue-950/40 text-blue-300 border-blue-900/40';
+    if (status === 'preparing') return 'bg-amber-950/40 text-amber-300 border-amber-900/40';
+    if (status === 'ready') return 'bg-emerald-950/40 text-emerald-300 border-emerald-900/40';
+    if (status === 'ready_to_bill') return 'bg-purple-950/40 text-purple-300 border-purple-900/40';
+    if (status === 'cancelled') return 'bg-red-950/40 text-red-300 border-red-900/40';
+    return 'bg-noir-panel text-noir-muted border-noir-border';
+  };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" id="staff-dashboard">
@@ -124,7 +218,7 @@ export default function StaffDashboard({ orders, onRefresh, staffId, staffName }
                   : 'text-noir-muted hover:text-noir-text'
               }`}
             >
-              Open Queue ({orders.filter(o => o.status === 'confirmed' || o.status === 'preparing' || o.status === 'ready').length})
+              Open Queue ({openQueueCount})
             </button>
             <button
               onClick={() => setStatusFilter('confirmed')}
@@ -154,7 +248,17 @@ export default function StaffDashboard({ orders, onRefresh, staffId, staffName }
                   : 'text-noir-muted hover:text-noir-text'
               }`}
             >
-              Ready ({orders.filter(o => o.status === 'ready').length})
+              Ready ({orders.filter(o => effectiveStatus(o) === 'ready').length})
+            </button>
+            <button
+              onClick={() => setStatusFilter('ready_to_bill')}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                statusFilter === 'ready_to_bill' 
+                  ? 'bg-purple-950/40 text-purple-300 border border-purple-900/40' 
+                  : 'text-noir-muted hover:text-noir-text'
+              }`}
+            >
+              Ready to Bill ({readyToBillCount})
             </button>
             <button
               onClick={() => setStatusFilter('delivered')}
@@ -185,21 +289,34 @@ export default function StaffDashboard({ orders, onRefresh, staffId, staffName }
             <button onClick={() => setErrorMsg(null)} className="text-noir-dim hover:text-noir-text font-bold">×</button>
           </div>
         )}
+        {successMsg && (
+          <div className="p-3 bg-noir-panel border border-emerald-500/20 text-emerald-400 rounded-xl text-xs font-semibold flex justify-between items-center">
+            <span>{successMsg}</span>
+            <button onClick={() => setSuccessMsg(null)} className="text-noir-dim hover:text-noir-text font-bold">×</button>
+          </div>
+        )}
 
         {/* Live Orders Loop */}
         <div className="space-y-4">
           {filteredOrders.length > 0 ? (
-            filteredOrders.map(order => (
+            filteredOrders.map(order => {
+              const status = effectiveStatus(order);
+              return (
               <div 
                 key={order.id} 
+                onClick={() => status === 'ready_to_bill' && openBillingModal(order.id)}
                 className={`bg-noir-card border border-noir-border rounded-2xl p-5 shadow-md hover:shadow-lg transition-all relative ${
-                  order.status === 'confirmed' 
+                  status === 'ready_to_bill' ? 'cursor-pointer ring-1 ring-purple-500/30 hover:ring-purple-500/50' : ''
+                } ${
+                  status === 'confirmed' 
                     ? 'border-l-4 border-l-blue-500' 
-                    : order.status === 'preparing'
+                    : status === 'preparing'
                     ? 'border-l-4 border-l-amber-500'
-                    : order.status === 'ready'
+                    : status === 'ready'
                     ? 'border-l-4 border-l-emerald-500'
-                    : order.status === 'cancelled'
+                    : status === 'ready_to_bill'
+                    ? 'border-l-4 border-l-purple-500'
+                    : status === 'cancelled'
                     ? 'border-l-4 border-l-red-500'
                     : 'border-l-4 border-l-noir-border'
                 }`}
@@ -210,20 +327,17 @@ export default function StaffDashboard({ orders, onRefresh, staffId, staffName }
                     <div className="flex items-center space-x-2">
                       <span className="font-mono text-xs font-semibold text-noir-dim">Order ID:</span>
                       <span className="font-mono font-bold text-noir-text text-sm">#{order.id}</span>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
-                        order.status === 'confirmed' ? 'bg-blue-950/40 text-blue-300 border-blue-900/40' :
-                        order.status === 'preparing' ? 'bg-amber-950/40 text-amber-300 border-amber-900/40' :
-                        order.status === 'ready' ? 'bg-emerald-950/40 text-emerald-300 border-emerald-900/40' :
-                        order.status === 'cancelled' ? 'bg-red-950/40 text-red-300 border-red-900/40' :
-                        'bg-noir-panel text-noir-muted border-noir-border'
-                      }`}>
-                        {order.status}
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${statusBadgeClass(status)}`}>
+                        {statusLabel(status)}
                       </span>
                     </div>
                     <div className="flex items-center space-x-2 mt-1 font-sans">
-                      <span className="font-serif italic text-noir-gold text-xs">Table {order.table_number}</span>
+                      <span className="font-serif italic text-noir-gold text-xs">{order.table_name}</span>
                       <span className="text-noir-dim">•</span>
-                      <span className="text-noir-muted text-xs font-medium">{order.customer_name} ({order.customer_phone})</span>
+                      <span className="text-noir-muted text-xs font-medium">
+                        {order.customer_name || 'Guest'}
+                        {order.customer_phone && !isWalkInPhone(order.customer_phone) ? ` (${order.customer_phone})` : ''}
+                      </span>
                     </div>
                   </div>
 
@@ -299,9 +413,9 @@ export default function StaffDashboard({ orders, onRefresh, staffId, staffName }
                 </div>
 
                 {/* Operations Buttons Flow Controls */}
-                <div className="mt-4 flex justify-between items-center flex-wrap gap-2 pt-2 border-t border-noir-border">
+                <div className="mt-4 flex justify-between items-center flex-wrap gap-2 pt-2 border-t border-noir-border" onClick={e => e.stopPropagation()}>
                   <div className="flex items-center space-x-2">
-                    {order.status === 'confirmed' && (
+                    {status === 'confirmed' && (
                       <button
                         onClick={() => handleTransition(order.id, 'preparing')}
                         className="px-3.5 py-1.5 bg-noir-gold hover:bg-noir-gold-hover text-black font-semibold rounded-lg text-[11px] transition-all flex items-center gap-1 cursor-pointer shadow-sm"
@@ -310,27 +424,36 @@ export default function StaffDashboard({ orders, onRefresh, staffId, staffName }
                       </button>
                     )}
 
-                    {order.status === 'preparing' && (
+                    {status === 'preparing' && (
                       <button
                         onClick={() => handleTransition(order.id, 'ready')}
                         className="px-3.5 py-1.5 bg-noir-gold hover:bg-noir-gold-hover text-black font-bold rounded-lg text-[11px] transition-all flex items-center gap-1 cursor-pointer shadow-sm animate-pulse"
                       >
-                        <CheckCircle className="w-3.5 h-3.5" /> Mark Ready (Serve)
+                        <CheckCircle className="w-3.5 h-3.5" /> Mark Ready
                       </button>
                     )}
 
-                    {order.status === 'ready' && (
+                    {status === 'ready' && (
                       <button
-                        onClick={() => handleTransition(order.id, 'delivered')}
+                        onClick={() => handleMarkServed(order.id)}
                         className="px-3.5 py-1.5 bg-noir-highlight hover:bg-noir-sidebar text-noir-text border border-noir-border font-semibold rounded-lg text-[11px] transition-colors flex items-center gap-1 cursor-pointer shadow-sm"
                       >
-                        <Send className="w-3.5 h-3.5" /> Confirm Served
+                        <Send className="w-3.5 h-3.5" /> Mark Served
+                      </button>
+                    )}
+
+                    {status === 'ready_to_bill' && (
+                      <button
+                        onClick={() => openBillingModal(order.id)}
+                        className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-semibold rounded-lg text-[11px] transition-colors flex items-center gap-1 cursor-pointer shadow-sm"
+                      >
+                        <Send className="w-3.5 h-3.5" /> View Bill &amp; Collect Payment
                       </button>
                     )}
                   </div>
 
                   {/* Cancellations restriction: Cancellations are only allowed for orders in 'confirmed' status */}
-                  {order.status === 'confirmed' && (
+                  {status === 'confirmed' && (
                     <button
                       onClick={() => setCancellingOrderId(order.id)}
                       className="px-2.5 py-1.5 border border-red-500/30 hover:border-red-500 text-red-400 hover:bg-red-950/10 font-semibold rounded-lg text-[11px] transition-colors flex items-center gap-1 cursor-pointer"
@@ -340,7 +463,8 @@ export default function StaffDashboard({ orders, onRefresh, staffId, staffName }
                   )}
                 </div>
               </div>
-            ))
+            );
+            })
           ) : (
             <div className="bg-noir-card border border-noir-border rounded-2xl p-12 text-center text-noir-dim shadow-md">
               <ClipboardList className="w-12 h-12 stroke-1 text-noir-dim mx-auto mb-3 animate-pulse" />
@@ -361,43 +485,64 @@ export default function StaffDashboard({ orders, onRefresh, staffId, staffName }
             <h3 className="font-serif text-noir-text text-sm">Table QR Link Generator</h3>
           </div>
           
-          <p className="text-xs text-noir-muted">Select a dine-in table number to print or generate its direct self-ordering link.</p>
+          <p className="text-xs text-noir-muted">Select a dine-in table from your database to generate its self-ordering link.</p>
 
           <div className="space-y-1">
-            <label className="block text-[10px] font-bold text-noir-dim uppercase tracking-wider">Dine-In Table Select (1 to 20)</label>
+            <label htmlFor="qr-table-select" className="block text-[10px] font-bold text-noir-dim uppercase tracking-wider">Dine-In Table</label>
             <div className="flex space-x-2">
               <select
-                value={selectedTable}
-                onChange={(e) => setSelectedTable(parseInt(e.target.value))}
-                className="flex-1 px-3 py-2 bg-noir-panel border border-noir-border rounded-xl text-xs text-noir-text focus:border-noir-gold outline-none font-mono"
+                id="qr-table-select"
+                aria-label="Select Dine-In Table"
+                value={selectedTableName}
+                onChange={(e) => setSelectedTableName(e.target.value)}
+                disabled={tables.length === 0}
+                className="flex-1 px-3 py-2 bg-noir-panel border border-noir-border rounded-xl text-xs text-noir-text focus:border-noir-gold outline-none font-mono disabled:opacity-50"
               >
-                {Array.from({ length: 20 }, (_, i) => i + 1).map(num => (
-                  <option key={num} value={num}>Dine-In Table #{num}</option>
-                ))}
+                {tables.length === 0 ? (
+                  <option value="">No tables loaded</option>
+                ) : (
+                  tables.map(t => (
+                    <option key={t.id} value={t.table_name}>
+                      {t.table_name} · {t.capacity} seats{t.is_in_use ? ' (occupied)' : ''}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
           </div>
 
           {/* Visual QR Code simulator */}
           <div className="bg-noir-panel border border-noir-border p-4 rounded-xl flex flex-col items-center justify-center text-center">
-            <div className="bg-noir-sidebar p-3 rounded-xl border border-noir-border shadow-inner inline-block">
-              <div className="w-32 h-32 bg-black rounded-lg flex items-center justify-center p-2 relative">
-                {/* Simulated QR block layout */}
-                <div className="absolute inset-0 bg-[radial-gradient(#c5a059_20%,transparent_21%)] bg-[length:12px_12px] opacity-70 m-3"></div>
-                {/* Outer corners */}
-                <div className="absolute top-2 left-2 w-6 h-6 border-4 border-noir-gold bg-black"></div>
-                <div className="absolute top-2 right-2 w-6 h-6 border-4 border-noir-gold bg-black"></div>
-                <div className="absolute bottom-2 left-2 w-6 h-6 border-4 border-noir-gold bg-black"></div>
-                {/* Center table ID marker */}
-                <div className="z-10 bg-noir-gold text-black font-mono font-bold text-base px-2.5 py-1.5 rounded-lg border-2 border-black shadow">
-                  T{selectedTable}
+            {selectedTable ? (
+              <>
+                <div className="bg-noir-sidebar p-3 rounded-xl border border-noir-border shadow-inner inline-block">
+                  <div className="w-32 h-32 bg-black rounded-lg flex items-center justify-center p-2 relative">
+                    <div className="absolute inset-0 bg-[radial-gradient(#c5a059_20%,transparent_21%)] bg-[length:12px_12px] opacity-70 m-3"></div>
+                    <div className="absolute top-2 left-2 w-6 h-6 border-4 border-noir-gold bg-black"></div>
+                    <div className="absolute top-2 right-2 w-6 h-6 border-4 border-noir-gold bg-black"></div>
+                    <div className="absolute bottom-2 left-2 w-6 h-6 border-4 border-noir-gold bg-black"></div>
+                    <div className="z-10 bg-noir-gold text-black font-mono font-bold text-[11px] leading-tight px-2 py-1.5 rounded-lg border-2 border-black shadow max-w-[5.5rem] truncate">
+                      {selectedTable.table_name}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-            
-            <p className="text-[10px] text-noir-dim font-mono mt-3 break-all w-full px-2">
-              {qrUrl}
-            </p>
+
+                <p className="text-xs text-noir-text font-semibold mt-3">{selectedTable.table_name}</p>
+                <p className="text-[11px] text-noir-gold font-mono mt-0.5">{selectedTable.capacity} seats</p>
+                {selectedTable.description && (
+                  <p className="text-[10px] text-noir-muted mt-1 px-2 italic">{selectedTable.description}</p>
+                )}
+                {selectedTable.is_in_use && (
+                  <p className="text-[10px] text-amber-400 mt-1">Currently occupied</p>
+                )}
+
+                <p className="text-[10px] text-noir-dim font-mono mt-3 break-all w-full px-2">
+                  {qrUrl}
+                </p>
+              </>
+            ) : (
+              <p className="text-xs text-noir-dim italic py-6">Load table_info rows from Supabase to generate QR links.</p>
+            )}
           </div>
 
           {/* Links actions */}
@@ -438,6 +583,60 @@ export default function StaffDashboard({ orders, onRefresh, staffId, staffName }
         </div>
       </div>
 
+      {/* BILL & PAYMENT MODAL */}
+      {billingOrderId && billingOrder && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <form onSubmit={handleConfirmBilling} className="bg-noir-card p-5 border border-noir-border rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+            <div className="border-b border-noir-border pb-2">
+              <h3 className="font-serif italic text-noir-gold text-base flex items-center gap-1.5">
+                <Send className="w-5 h-5 text-purple-400" /> Bill — Order #{billingOrder.id}
+              </h3>
+              <p className="text-xs text-noir-muted mt-1">{billingOrder.table_name} · {billingOrder.customer_name || 'Guest'}</p>
+            </div>
+
+            <div className="bg-noir-panel border border-noir-border rounded-xl p-3">
+              {(() => {
+                const bill = billSummaryLines(billingOrder);
+                return (
+                  <BillSummary
+                    lineItems={bill.rows}
+                    subtotal={bill.subtotal}
+                    discount={bill.discount}
+                    gst={bill.gst}
+                    total={bill.total}
+                    currency={billingOrder.currency || appSettings.default_currency}
+                    discountLabel={bulkDiscountLabel(appSettings)}
+                    gstLabel={gstLabel(appSettings)}
+                  />
+                );
+              })()}
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <p className="font-semibold text-noir-dim uppercase text-[9px] tracking-wider">Payment Method</p>
+              {(['Cash', 'Card', 'UPI'] as const).map(mode => (
+                <label key={mode} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${billingPaymentMode === mode ? 'border-noir-gold bg-noir-highlight' : 'border-noir-border bg-noir-panel hover:border-noir-border-light'}`}>
+                  <input type="radio" name="paymode" value={mode} checked={billingPaymentMode === mode}
+                    onChange={() => setBillingPaymentMode(mode)} className="accent-yellow-500" />
+                  <span className="font-semibold text-noir-text">{mode === 'Cash' ? 'Cash at Counter' : mode === 'Card' ? 'Credit / Debit Card' : 'UPI / QR Scan'}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="flex space-x-2 pt-2 text-xs">
+              <button type="button" onClick={() => setBillingOrderId(null)}
+                className="flex-1 py-2 bg-noir-highlight border border-noir-border hover:bg-noir-sidebar text-noir-text font-semibold rounded-xl cursor-pointer">
+                Cancel
+              </button>
+              <button type="submit"
+                className="flex-1 py-2 bg-noir-gold hover:bg-noir-gold-hover text-black font-bold rounded-xl cursor-pointer flex items-center justify-center gap-1.5">
+                <CheckCircle className="w-3.5 h-3.5" /> Confirm Payment
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* CANCELLATION MODAL */}
       {cancellingOrderId && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
@@ -453,6 +652,8 @@ export default function StaffDashboard({ orders, onRefresh, staffId, staffName }
               <div className="space-y-1">
                 <label className="block font-semibold text-noir-dim uppercase text-[9px] tracking-wider">Select Cancellation Reason *</label>
                 <select
+                  id="cancel-reason-select"
+                  aria-label="Select cancellation reason"
                   value={cancelReason}
                   onChange={(e) => setCancelReason(e.target.value)}
                   className="w-full px-3 py-2 bg-noir-panel border border-noir-border rounded-xl text-noir-text focus:border-noir-gold outline-none text-xs"

@@ -1,0 +1,165 @@
+# Slice of Heaven Pizzeria — App Help
+
+Welcome to the Slice of Heaven ordering and operations platform. This guide covers setup, roles, features, and common questions. The support chatbot uses this document to answer staff and customer questions.
+
+---
+
+## Setup Instructions
+
+### 1. Environment configuration
+
+Configure these secrets in your deployment environment (`.env` or hosting secrets panel):
+
+| Variable | Purpose |
+|----------|---------|
+| `SUPABASE_URL` | Your Supabase project URL |
+| `SUPABASE_ANON_KEY` | Public anon key for browser auth |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-side API access (never expose to browsers) |
+| `GEMINI_API_KEY` | Powers the AI support chatbot |
+| `SUPABASE_REDIRECT_URL` | Optional — URL staff return to after email invite links |
+| `RESEND_API_KEY` | Optional — send staff temporary password emails via Resend |
+| `STAFF_EMAIL_FROM` | Required with Resend — sender address (e.g. `Pizzeria <noreply@yourdomain.com>`) |
+
+Restart the app after changing environment variables (`npm run dev` in development).
+
+### 2. First admin account
+
+The **first admin** must be created in the **Supabase Dashboard → Authentication → Users** (or via SQL linked to `profiles` with role `admin`). After that, admins can add all other staff from **Admin Analytics → User Management**.
+
+### 3. Menu data
+
+On startup the server loads three CSV files from the `input_data/` folder:
+
+- `bases.csv` — crust options  
+- `pizzas.csv` — pizza recipes  
+- `toppings.csv` — extra toppings  
+
+Format: `code;name;price_inr;description` (semicolon or comma separated, with header row).
+
+If a file has errors, the app still starts. Fix the files and use **Admin → Pizza & Master Menu → Reload input_data** or **Bulk Upload**.
+
+### 4. Store billing settings
+
+Admins configure bulk discount %, minimum pizza quantity for discount, default currency, and GST % under **Admin Analytics → Store Settings**. These values apply to all new orders.
+
+### 5. Dine-in tables & QR codes
+
+Staff can generate table QR links from **Staff Kitchen → QR Generator**. Customers scanning a QR code land on the ordering flow with their table pre-selected.
+
+---
+
+## Roles & Responsibilities
+
+### Customer (Dine-In)
+
+- Browse menu and build pizza combos (base + pizzas + toppings)  
+- Enter **name, mobile number, and email** at checkout  
+- View order history by phone, email, or order ID  
+- Pay at the counter when staff marks the order served  
+
+*Note: A staff member must be logged in before customers can place orders.*
+
+### Staff (Kitchen / Front of House)
+
+- View and filter the live order queue  
+- Advance orders: **Confirmed → Preparing → Ready**  
+- **Mark Served** when food reaches the table  
+- **Bill & Pay** after serving (Cash, Card, or UPI)  
+- Generate QR codes for tables  
+- Use **Support Chat** for policy and order-status questions  
+
+### Admin (Executive)
+
+Everything staff can do, plus:
+
+- **Analytics** — revenue, discounts, table occupancy, chat stats  
+- **Customers** — search, register, bulk import  
+- **Pizza & Master Menu** — add items, bulk upload, reload `input_data/`  
+- **User Management** — invite staff and admin accounts  
+- **Store Settings** — discount, currency, GST  
+- **Support Chat** — full access including knowledge-base view  
+
+---
+
+## Features Overview
+
+| Area | What it does |
+|------|----------------|
+| **Dine-In Customer** | Combo builder, bill preview with discount/GST, table selection, order history |
+| **Staff Kitchen** | Order pipeline, billing modal, table QR links |
+| **Admin Analytics** | KPIs, charts, customer and menu management |
+| **User Management** | Invite users by email; first login requires password change |
+| **Store Settings** | Configurable bulk discount and tax without code changes |
+| **Support Chat** | Gemini AI assistant grounded in this help doc and live order/menu data |
+| **Order log** | Completed orders append to `orders_log.txt` on the server |
+
+### Billing rules (default)
+
+- Bulk discount applies when total **pizza quantity** meets the configured minimum (default: 5+ pizzas → 10% off subtotal)  
+- GST is calculated on the discounted subtotal (default: 5%)  
+- Admins can change percentages in Store Settings  
+
+### Order status flow
+
+1. **confirmed** — order placed  
+2. **preparing** — kitchen working  
+3. **ready** — ready for pickup/serving  
+4. **Mark Served** — sets served timestamp (required before billing)  
+5. **Bill & Pay** — payment collected → **delivered**  
+
+---
+
+## User Management
+
+Admins add team members from **Admin Analytics → User Management**:
+
+1. Click **Invite User**  
+2. Enter work email, display name, and role (**Staff** or **Admin**)  
+3. Click **Send invitation**  
+
+**What happens next:**
+
+- Login instructions are **emailed to the user only** — admins never see the temporary password  
+- With `RESEND_API_KEY` + `STAFF_EMAIL_FROM` configured, the email includes the temporary password  
+- Otherwise Supabase sends a **password setup link** (configure Auth email/SMTP in Supabase)  
+- On **first login**, the user must set a **new password** before accessing the app  
+- The new user appears in the user list with their role badge  
+
+The first admin account cannot be created from the app — use Supabase Console once, then manage all other users here.
+
+---
+
+## FAQ
+
+**Why can't I place an order as a customer?**  
+A staff or admin must sign in first. Ordering is enabled only while staff session is active.
+
+**Where is my bulk discount?**  
+Discount applies to pizza quantity only (not bases/toppings alone). Check Store Settings for the current threshold and percentage.
+
+**How do I look up an old order?**  
+Customer tab → **Order History** → search by order ID, phone, or email.
+
+**Menu import failed at startup — what now?**  
+Read the yellow banner at the top, fix CSV files in `input_data/`, then **Reload input_data** or bulk-upload via Admin → Menu.
+
+**Chatbot says Gemini key is missing**  
+Add `GEMINI_API_KEY` to environment secrets and restart the server.
+
+**Can staff cancel an order?**  
+Staff can cancel orders still in **confirmed** status. Once preparing, cancellation is restricted (see kitchen dashboard).
+
+**How do table QR codes work?**  
+Staff generates a link like `?table=3`. Scanning opens the customer flow with Table 3 locked in.
+
+**Who can change billing settings?**  
+Admins only — **Store Settings** tab. Changes apply to new orders immediately.
+
+**Is customer email required?**  
+Yes — name, phone, and email are all required at checkout for receipts and order history lookup.
+
+---
+
+## Contact & Support
+
+For technical issues with Supabase or email delivery, check your Supabase project **Authentication → Email Templates** and SMTP settings. For app behaviour questions, use **Support Chat** or this Help tab.

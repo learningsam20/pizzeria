@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MessageSquare, Send, Bot, User, RefreshCw, Upload, FileText, CheckCircle2 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { MessageSquare, Send, Bot, User, RefreshCw, Upload, FileText } from 'lucide-react';
 import { MenuItem, OrderWithItems } from '../types';
 
 interface Message {
@@ -15,28 +17,34 @@ interface ChatbotProps {
 
 export default function Chatbot({ currentOrders, menuItems, isAdmin }: ChatbotProps) {
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'assistant', content: 'Hello! I am your Slice of Heaven digital assistant. Ask me anything about our pizzas, pricing, billing rules, or the status of your order!' }
+    { role: 'assistant', content: 'Hello! I am your Slice of Heaven digital assistant. Ask me about pizzas, pricing, billing rules, or your order status.' }
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'chat' | 'knowledge'>('chat');
-  
-  // Knowledge Base admin state
+
   const [kbText, setKbText] = useState('');
   const [kbStatus, setKbStatus] = useState<{ exists: boolean; sizeBytes: number; updatedAt: string | null; snippet: string } | null>(null);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionStartedAt, setSessionStartedAt] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom of chat
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
-  // Fetch current knowledge base status on load
   useEffect(() => {
     fetchKbStatus();
+    fetch('/api/chat/session', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+      .then(r => r.json())
+      .then(d => {
+        setSessionId(d.sessionId);
+        setSessionStartedAt(d.sessionStartedAt);
+      })
+      .catch(() => {});
   }, []);
 
   const fetchKbStatus = async () => {
@@ -44,9 +52,6 @@ export default function Chatbot({ currentOrders, menuItems, isAdmin }: ChatbotPr
       const res = await fetch('/api/km-status');
       const data = await res.json();
       setKbStatus(data);
-      if (data.exists) {
-        // If it exists, fetch status snippet or we can load more if desired
-      }
     } catch (err) {
       console.error('Error fetching KB status:', err);
     }
@@ -62,13 +67,13 @@ export default function Chatbot({ currentOrders, menuItems, isAdmin }: ChatbotPr
       });
       const data = await res.json();
       if (data.success) {
-        setUploadStatus('✅ km.txt saved successfully!');
+        setUploadStatus('km.txt saved successfully!');
         fetchKbStatus();
       } else {
-        setUploadStatus('❌ Failed: ' + data.error);
+        setUploadStatus('Failed: ' + data.error);
       }
     } catch (err: any) {
-      setUploadStatus('❌ Error: ' + err.message);
+      setUploadStatus('Error: ' + err.message);
     }
   };
 
@@ -93,19 +98,14 @@ export default function Chatbot({ currentOrders, menuItems, isAdmin }: ChatbotPr
     setDragOver(true);
   };
 
-  const handleDragLeave = () => {
-    setDragOver(false);
-  };
+  const handleDragLeave = () => setDragOver(false);
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
     const file = e.dataTransfer.files?.[0];
-    if (file && file.type === 'text/plain') {
-      readAndUploadFile(file);
-    } else {
-      alert('Only plain text (.txt) files are supported for km.txt knowledge base.');
-    }
+    if (file && file.type === 'text/plain') readAndUploadFile(file);
+    else alert('Only plain text (.txt) files are supported for km.txt knowledge base.');
   };
 
   const handleSendMessage = async (textToSend?: string) => {
@@ -117,17 +117,17 @@ export default function Chatbot({ currentOrders, menuItems, isAdmin }: ChatbotPr
     setLoading(true);
 
     try {
-      // Gather relevant client order/menu states to inject as real-time context
       const payload = {
         message: text,
-        history: messages.slice(-10), // Pass last 10 messages for conversational context
+        sessionId,
+        history: messages.slice(-10),
         currentOrders: currentOrders.map(o => ({
           id: o.id,
           customer_name: o.customer_name,
           customer_phone: o.customer_phone,
           status: o.status,
           total_payable: o.total_payable,
-          table_number: o.table_number,
+          table_name: o.table_name,
           created_at: o.created_at,
           items: o.items.map(i => ({ name: i.name, quantity: i.quantity }))
         })),
@@ -149,96 +149,117 @@ export default function Chatbot({ currentOrders, menuItems, isAdmin }: ChatbotPr
       if (res.ok) {
         setMessages(prev => [...prev, { role: 'assistant', content: data.text }]);
       } else {
-        setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ Error: ${data.error || 'Failed to generate response'}` }]);
+        setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${data.error || 'Failed to generate response'}` }]);
       }
     } catch (err: any) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `❌ Network Error: Could not reach chatbot server. Please confirm backend server is running. (${err.message})` }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: `Network error: ${err.message}` }]);
     } finally {
       setLoading(false);
     }
   };
 
   const suggestionChips = [
-    "What is the status of order #1?",
-    "What bases can I select?",
-    "Show me the pricing for Pepperoni pizza",
-    "What is the cancellation refund policy?"
+    'What is the status of order #1?',
+    'What bases can I select?',
+    'Show me the pricing for Pepperoni pizza',
+    'What is the cancellation refund policy?'
   ];
 
   return (
-    <div className="flex flex-col h-[600px] border border-gray-200 rounded-2xl bg-white shadow-xl overflow-hidden" id="chatbot-container">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-red-600 to-amber-500 text-white p-4 flex justify-between items-center">
+    <div className="flex flex-col h-[600px] border border-noir-border rounded-2xl bg-noir-card shadow-xl overflow-hidden" id="chatbot-container">
+      <div className="bg-noir-sidebar border-b border-noir-border p-4 flex justify-between items-center">
         <div className="flex items-center space-x-3">
-          <Bot className="w-8 h-8 p-1 bg-white/20 rounded-lg animate-pulse" id="bot-icon" />
+          <div className="p-2 bg-noir-highlight rounded-xl border border-noir-gold-o20">
+            <Bot className="w-6 h-6 text-noir-gold" id="bot-icon" />
+          </div>
           <div>
-            <h3 className="font-semibold text-lg font-sans tracking-tight">Slice of Heaven AI Chat</h3>
-            <p className="text-xs text-white/80 font-mono">Powered by Gemini 3.5 Flash</p>
+            <h3 className="font-serif italic text-noir-gold text-base tracking-tight">Slice of Heaven Support</h3>
+            <p className="text-[10px] text-noir-muted font-mono">
+              Powered by Gemini{sessionStartedAt ? ` · Session ${new Date(sessionStartedAt).toLocaleTimeString()}` : ''}
+            </p>
           </div>
         </div>
         {isAdmin && (
-          <div className="flex bg-white/20 p-0.5 rounded-lg text-xs font-medium">
+          <div className="flex bg-noir-panel p-0.5 rounded-lg border border-noir-border text-xs font-semibold">
             <button
               onClick={() => setActiveTab('chat')}
-              className={`px-3 py-1 rounded-md transition-all ${activeTab === 'chat' ? 'bg-white text-red-600 shadow-sm' : 'text-white'}`}
+              className={`px-3 py-1 rounded-md transition-all cursor-pointer ${activeTab === 'chat' ? 'bg-noir-gold text-black' : 'text-noir-muted hover:text-noir-text'}`}
               id="chat-tab-btn"
             >
               Chat
             </button>
             <button
               onClick={() => setActiveTab('knowledge')}
-              className={`px-3 py-1 rounded-md transition-all ${activeTab === 'knowledge' ? 'bg-white text-red-600 shadow-sm' : 'text-white'}`}
+              className={`px-3 py-1 rounded-md transition-all cursor-pointer ${activeTab === 'knowledge' ? 'bg-noir-gold text-black' : 'text-noir-muted hover:text-noir-text'}`}
               id="kb-tab-btn"
             >
-              Knowledge Base (Admin)
+              Knowledge Base
             </button>
           </div>
         )}
       </div>
 
       {activeTab === 'chat' ? (
-        <div className="flex-1 flex flex-col min-h-0 bg-gray-50">
-          {/* Chat Window */}
+        <div className="flex-1 flex flex-col min-h-0 bg-noir-panel">
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {messages.map((m, idx) => (
               <div
                 key={idx}
                 className={`flex items-start space-x-2.5 max-w-[85%] ${m.role === 'user' ? 'ml-auto flex-row-reverse space-x-reverse' : 'mr-auto'}`}
               >
-                <div className={`p-2 rounded-xl flex-shrink-0 ${m.role === 'user' ? 'bg-amber-100 text-amber-700' : 'bg-red-50 text-red-600'}`}>
+                <div className={`p-2 rounded-xl flex-shrink-0 border ${m.role === 'user' ? 'bg-noir-gold/20 text-noir-gold border-noir-gold-o20' : 'bg-noir-highlight text-noir-gold border-noir-border'}`}>
                   {m.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
                 </div>
                 <div
-                  className={`p-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap font-sans ${
-                    m.role === 'user' ? 'bg-amber-500 text-white shadow-md' : 'bg-white border border-gray-100 text-gray-800 shadow-sm'
+                  className={`p-3 rounded-2xl text-sm leading-relaxed font-sans ${
+                    m.role === 'user'
+                      ? 'bg-noir-gold text-black shadow-md whitespace-pre-wrap'
+                      : 'bg-noir-card border border-noir-border text-noir-text shadow-sm chat-markdown'
                   }`}
                 >
-                  {m.content}
+                  {m.role === 'user' ? m.content : (
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                        ul: ({ children }) => <ul className="list-disc pl-4 mb-2 space-y-0.5">{children}</ul>,
+                        ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-0.5">{children}</ol>,
+                        li: ({ children }) => <li>{children}</li>,
+                        strong: ({ children }) => <strong className="font-bold text-noir-gold">{children}</strong>,
+                        em: ({ children }) => <em className="italic text-noir-muted">{children}</em>,
+                        code: ({ children }) => <code className="bg-noir-panel px-1 py-0.5 rounded text-[11px] font-mono">{children}</code>,
+                        h1: ({ children }) => <h3 className="font-serif italic text-noir-gold text-base mb-1">{children}</h3>,
+                        h2: ({ children }) => <h4 className="font-semibold text-noir-text mb-1">{children}</h4>,
+                        a: ({ href, children }) => <a href={href} className="text-noir-gold underline" target="_blank" rel="noreferrer">{children}</a>,
+                      }}
+                    >
+                      {m.content}
+                    </ReactMarkdown>
+                  )}
                 </div>
               </div>
             ))}
-            
+
             {loading && (
               <div className="flex items-start space-x-2.5 max-w-[85%] mr-auto">
-                <div className="p-2 rounded-xl bg-red-50 text-red-600 animate-bounce">
-                  <Bot className="w-4 h-4" />
+                <div className="p-2 rounded-xl bg-noir-highlight text-noir-gold border border-noir-border">
+                  <Bot className="w-4 h-4 animate-pulse" />
                 </div>
-                <div className="p-3 rounded-2xl text-sm bg-white border border-gray-100 text-gray-500 shadow-sm flex items-center space-x-2">
-                  <RefreshCw className="w-4 h-4 animate-spin text-red-500" />
-                  <span>Gemini is thinking...</span>
+                <div className="p-3 rounded-2xl text-sm bg-noir-card border border-noir-border text-noir-muted shadow-sm flex items-center space-x-2">
+                  <RefreshCw className="w-4 h-4 animate-spin text-noir-gold" />
+                  <span>Thinking...</span>
                 </div>
               </div>
             )}
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Suggestion Chips */}
-          <div className="p-2 border-t border-gray-100 bg-white flex space-x-2 overflow-x-auto scrollbar-none">
+          <div className="p-2 border-t border-noir-border bg-noir-sidebar flex space-x-2 overflow-x-auto">
             {suggestionChips.map((chip, idx) => (
               <button
                 key={idx}
                 onClick={() => handleSendMessage(chip)}
-                className="whitespace-nowrap px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-xs text-gray-600 hover:text-gray-800 rounded-full font-sans transition-colors cursor-pointer"
+                className="whitespace-nowrap px-3 py-1.5 bg-noir-panel hover:bg-noir-highlight border border-noir-border text-[11px] text-noir-muted hover:text-noir-text rounded-full transition-colors cursor-pointer"
                 disabled={loading}
               >
                 {chip}
@@ -246,21 +267,22 @@ export default function Chatbot({ currentOrders, menuItems, isAdmin }: ChatbotPr
             ))}
           </div>
 
-          {/* Input Box */}
-          <div className="p-3 border-t border-gray-200 bg-white flex space-x-2 items-center">
+          <div className="p-3 border-t border-noir-border bg-noir-card flex space-x-2 items-center">
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-              placeholder="Ask about pizzas, status of order, pricing..."
-              className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+              placeholder="Ask about pizzas, order status, pricing..."
+              className="flex-1 px-4 py-2.5 bg-noir-panel border border-noir-border rounded-xl text-sm text-noir-text placeholder:text-noir-dim focus:outline-none focus:border-noir-gold transition-all"
               id="chat-input"
               disabled={loading}
             />
             <button
               onClick={() => handleSendMessage()}
-              className="p-2.5 bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white rounded-xl transition-colors cursor-pointer"
+              aria-label="Send chat message"
+              title="Send chat message"
+              className="p-2.5 bg-noir-gold hover:bg-noir-gold-hover disabled:opacity-40 text-black rounded-xl transition-colors cursor-pointer"
               id="send-chat-btn"
               disabled={loading || !input.trim()}
             >
@@ -269,82 +291,71 @@ export default function Chatbot({ currentOrders, menuItems, isAdmin }: ChatbotPr
           </div>
         </div>
       ) : (
-        /* Knowledge Base Management Panel */
-        <div className="flex-1 overflow-y-auto p-6 bg-white space-y-6">
-          <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+        <div className="flex-1 overflow-y-auto p-6 bg-noir-panel space-y-6">
+          <div className="flex items-center justify-between border-b border-noir-border pb-3">
             <div>
-              <h4 className="font-semibold text-gray-800 text-base">Knowledge Management File (km.txt)</h4>
-              <p className="text-xs text-gray-500">Provide the pricing, policy, and menu text context used directly by the AI chatbot.</p>
+              <h4 className="font-serif italic text-noir-gold text-base">Knowledge Base (app-help.md)</h4>
+              <p className="text-xs text-noir-muted mt-1">
+                Loaded from <code className="text-noir-text">docs/app-help.md</code> at server startup. Install and deployment: <code className="text-noir-text">docs/setup.md</code>.
+              </p>
             </div>
-            <button onClick={fetchKbStatus} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="Refresh">
+            <button onClick={fetchKbStatus} className="p-1.5 text-noir-dim hover:text-noir-gold hover:bg-noir-highlight rounded-lg border border-noir-border" title="Refresh">
               <RefreshCw className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Current File Status */}
-          <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 flex items-start space-x-3">
-            <FileText className="w-8 h-8 text-amber-500 flex-shrink-0" />
+          <div className="bg-noir-card rounded-xl p-4 border border-noir-border flex items-start space-x-3">
+            <FileText className="w-8 h-8 text-noir-gold flex-shrink-0" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-700">Status in Server: {kbStatus?.exists ? '✅ Loaded' : '⚠️ Missing (Using Default)'}</p>
+              <p className="text-sm font-medium text-noir-text">Server status: {kbStatus?.exists ? 'Loaded' : 'Missing (using default)'}</p>
               {kbStatus?.exists && (
-                <div className="text-xs text-gray-500 space-y-1 mt-1 font-mono">
-                  <p>File Size: {(kbStatus.sizeBytes / 1024).toFixed(2)} KB</p>
-                  <p>Last Modified: {new Date(kbStatus.updatedAt || '').toLocaleString()}</p>
+                <div className="text-xs text-noir-muted space-y-1 mt-1 font-mono">
+                  <p>Size: {(kbStatus.sizeBytes / 1024).toFixed(2)} KB</p>
+                  <p>Modified: {new Date(kbStatus.updatedAt || '').toLocaleString()}</p>
                 </div>
               )}
               {kbStatus?.snippet && (
-                <div className="mt-2.5 p-2 bg-white rounded border border-gray-100 text-xs font-mono text-gray-600 max-h-[80px] overflow-y-auto">
-                  <strong>Content Snippet:</strong>
-                  <p className="whitespace-pre-wrap">{kbStatus.snippet}</p>
+                <div className="mt-2.5 p-2 bg-noir-panel rounded border border-noir-border text-xs font-mono text-noir-muted max-h-[80px] overflow-y-auto whitespace-pre-wrap">
+                  {kbStatus.snippet}
                 </div>
               )}
             </div>
           </div>
 
-          {/* Paste or Upload Section */}
           <div className="space-y-3">
-            <label className="block text-sm font-medium text-gray-700">Upload new `km.txt` file</label>
+            <label className="block text-sm font-medium text-noir-text">Override knowledge base (optional)</label>
+            <p className="text-[10px] text-noir-dim">Uploads here replace km.txt until the next server restart, when app-help.md is synced again.</p>
             <div
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               className={`border-2 border-dashed rounded-xl p-6 text-center transition-all ${
-                dragOver ? 'border-red-500 bg-red-50/50 scale-[0.99]' : 'border-gray-200 hover:border-gray-300'
+                dragOver ? 'border-noir-gold bg-noir-highlight/50' : 'border-noir-border hover:border-noir-gold-o20 bg-noir-card'
               }`}
             >
-              <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-              <p className="text-xs font-medium text-gray-600 mb-1">Drag and drop your `km.txt` file here</p>
-              <p className="text-[11px] text-gray-400 mb-3">Or click below to choose a file from your computer</p>
-              <input
-                type="file"
-                accept=".txt"
-                onChange={handleFileUpload}
-                className="hidden"
-                id="file-kb-upload"
-              />
-              <label
-                htmlFor="file-kb-upload"
-                className="px-3.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-xs text-gray-700 rounded-lg cursor-pointer border border-gray-200 font-medium inline-block"
-              >
+              <Upload className="w-8 h-8 text-noir-dim mx-auto mb-2" />
+              <p className="text-xs font-medium text-noir-muted mb-3">Drag & drop km.txt or choose a file</p>
+              <input type="file" accept=".txt" onChange={handleFileUpload} className="hidden" id="file-kb-upload" />
+              <label htmlFor="file-kb-upload" className="px-3.5 py-1.5 bg-noir-highlight hover:bg-noir-sidebar text-xs text-noir-gold rounded-lg cursor-pointer border border-noir-gold-o20 font-medium inline-block">
                 Select File
               </label>
             </div>
           </div>
 
           <div className="space-y-3">
-            <label className="block text-sm font-medium text-gray-700">Or Paste Content Directly</label>
+            <label className="block text-sm font-medium text-noir-text">Or paste content</label>
             <textarea
               rows={8}
               value={kbText}
               onChange={(e) => setKbText(e.target.value)}
-              placeholder="Paste custom pricing, pizza toppings, rules, schedules, phone numbers..."
-              className="w-full p-3 text-xs font-mono border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500"
+              placeholder="Paste custom pricing, toppings, rules..."
+              className="w-full p-3 text-xs font-mono bg-noir-card border border-noir-border rounded-xl text-noir-text focus:outline-none focus:border-noir-gold"
             />
             <div className="flex justify-between items-center">
-              {uploadStatus && <span className="text-xs font-medium text-gray-600">{uploadStatus}</span>}
+              {uploadStatus && <span className="text-xs text-noir-muted">{uploadStatus}</span>}
               <button
                 onClick={() => handleUploadKb(kbText)}
-                className="ml-auto px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-medium transition-colors cursor-pointer"
+                className="ml-auto px-4 py-2 bg-noir-gold hover:bg-noir-gold-hover text-black rounded-xl text-xs font-semibold transition-colors cursor-pointer disabled:opacity-40"
                 disabled={!kbText.trim()}
               >
                 Save Changes

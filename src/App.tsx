@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Pizza, ChefHat, ShieldAlert, Bot, Database, RefreshCw, Key, LogIn, LogOut, CheckCircle, Flame, ShieldCheck, SlidersHorizontal 
+  Pizza, ChefHat, ShieldAlert, Bot, RefreshCw, Key, LogIn, LogOut, CheckCircle, Flame, ShieldCheck, SlidersHorizontal, AlertTriangle, BookOpen
 } from 'lucide-react';
 import { setSupabaseInstance, getSupabase } from './lib/supabaseClient';
 import { dbService } from './lib/dbService';
-import { AppConfig, MenuItem, OrderWithItems, Profile } from './types';
+import { AppConfig, MenuItem, OrderWithItems, Profile, DineInTable, tableQrNumber, AppSettings, MenuLoadStatus } from './types';
+import { DEFAULT_APP_SETTINGS } from './lib/appSettings';
 
 // Import our modular components
 import OrderingFlow from './components/OrderingFlow';
 import StaffDashboard from './components/StaffDashboard';
 import AdminDashboard from './components/AdminDashboard';
 import Chatbot from './components/Chatbot';
-import ConfigGuide from './components/ConfigGuide';
+import AppHelp from './components/AppHelp';
 
 export default function App() {
   // Global States
@@ -23,35 +24,56 @@ export default function App() {
   const [orders, setOrders] = useState<OrderWithItems[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [tables, setTables] = useState<DineInTable[]>([]);
+  const [appSettings, setAppSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
+  const [menuLoadStatus, setMenuLoadStatus] = useState<MenuLoadStatus | null>(null);
 
   // Testing Sandbox Roles Selector
-  const [activeRole, setActiveRole] = useState<'customer' | 'staff' | 'admin' | 'chatbot' | 'config'>('customer');
+  const [activeRole, setActiveRole] = useState<'customer' | 'staff' | 'admin' | 'chatbot' | 'help'>('customer');
 
   // Staff and Admin logged status
   const [staffSession, setStaffSession] = useState<{ id: string; name: string; role: 'staff' | 'admin' } | null>(null);
   const [staffLoginEmail, setStaffLoginEmail] = useState('');
   const [staffLoginPassword, setStaffLoginPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [passwordChangeRequiredFor, setPasswordChangeRequiredFor] = useState<{ id: string; email: string } | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordChangeError, setPasswordChangeError] = useState('');
+  const [passwordChangeLoading, setPasswordChangeLoading] = useState(false);
 
-  // Active query parameters for scanned QR tables
-  const [scannedTable, setScannedTable] = useState<number | null>(null);
+  // Active query parameters for scanned QR tables (?table=N)
+  const [scannedTableQr, setScannedTableQr] = useState<number | null>(null);
 
   // Initialize and load configurations
   useEffect(() => {
-    // Check url search parameters for table e.g. ?table=5 from QR codes
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const tbl = params.get('table');
       if (tbl) {
-        const tNum = parseInt(tbl);
-        if (tNum >= 1 && tNum <= 20) {
-          setScannedTable(tNum);
-          setActiveRole('customer'); // Direct scanned table to Customer Ordering flow
+        const tNum = parseInt(tbl, 10);
+        if (!Number.isNaN(tNum) && tNum >= 1) {
+          setScannedTableQr(tNum);
+          setActiveRole('customer');
         }
       }
     }
     
     initializeConfig();
+    dbService.getSettings().then(setAppSettings).catch(() => {});
+    dbService.getMenuLoadStatus().then(setMenuLoadStatus).catch(() => {});
   }, []);
+
+  const lockedTable = scannedTableQr != null
+    ? tables.find(t => tableQrNumber(t) === scannedTableQr)
+      ?? tables.find(t => t.table_name === `Table ${scannedTableQr}`)
+      ?? null
+    : null;
+
+  const activeTableOrders = lockedTable
+    ? orders.filter(o => o.table_name === lockedTable.table_name && o.status !== 'delivered' && o.status !== 'cancelled')
+    : [];
 
   const initializeConfig = async () => {
     setLoading(true);
@@ -78,81 +100,246 @@ export default function App() {
     }
   };
 
+  const resolveStaffSession = async (userId: string, email: string) => {
+    const supabase = getSupabase();
+    if (!supabase) throw new Error('Supabase is not connected.');
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) throw new Error('No staff profile exists for this account.');
+    if (data.role !== 'staff' && data.role !== 'admin') {
+      throw new Error('This account does not have staff access.');
+    }
+
+    return {
+      id: data.id,
+      name: data.display_name || email,
+      role: data.role as 'staff' | 'admin'
+    };
+  };
+
   // Sync data across all tabs instantly on events
   useEffect(() => {
-    fetchActiveData();
+    if (supabaseConnected) {
+      fetchActiveData();
+    }
+  }, [supabaseConnected]);
+
+  useEffect(() => {
+    const restoreSession = async () => {
+      const supabase = getSupabase();
+      if (!supabase) return;
+
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error || !session?.user) {
+        setStaffSession(null);
+        return;
+      }
+
+      try {
+        const mustChangePassword = Boolean(session.user.user_metadata?.must_change_password);
+        if (mustChangePassword) {
+          setPasswordChangeRequiredFor({ id: session.user.id, email: session.user.email || '' });
+          setStaffSession(null);
+          setActiveRole('customer');
+          return;
+        }
+
+        const profile = await resolveStaffSession(session.user.id, session.user.email || '');
+        setStaffSession(profile);
+        setActiveRole(profile.role === 'admin' ? 'admin' : 'staff');
+      } catch (err: any) {
+        setStaffSession(null);
+        await supabase.auth.signOut();
+      }
+    };
+
+    if (supabaseConnected) {
+      restoreSession();
+    }
   }, [supabaseConnected]);
 
   const fetchActiveData = async () => {
     try {
-      const loadedMenu = await dbService.getMenuItems();
+      const [loadedMenu, loadedOrders, loadedProfiles, loadedTables, loadedSettings] = await Promise.all([
+        dbService.getMenuItems(),
+        dbService.getOrders(),
+        dbService.getProfiles(),
+        dbService.getTables().catch(() => []),
+        dbService.getSettings().catch(() => DEFAULT_APP_SETTINGS),
+      ]);
       setMenuItems(loadedMenu);
-
-      const loadedOrders = await dbService.getOrders();
       setOrders(loadedOrders);
-
-      const loadedProfiles = await dbService.getProfiles();
       setProfiles(loadedProfiles);
+      setTables(loadedTables);
+      setAppSettings(loadedSettings);
     } catch (err) {
       console.error("Error fetching live matrices:", err);
     }
   };
 
-  // Handle local mock or real auth sign-in for staff
-  const handleStaffLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!staffLoginEmail.trim()) return;
-
-    // Look up email in our profiles table (works for both Supabase or Local localStorage profiles!)
-    const match = profiles.find(p => p.email.toLowerCase() === staffLoginEmail.trim().toLowerCase());
-    
-    if (match) {
-      setStaffSession({
-        id: match.id,
-        name: match.display_name || match.email,
-        role: match.role
-      });
-      // Set to appropriate dashboard
-      if (match.role === 'admin') {
-        setActiveRole('admin');
-      } else {
-        setActiveRole('staff');
-      }
-      setStaffLoginEmail('');
-    } else {
-      // Create a transient demo session if it doesn't exist, for convenient developer previewing!
-      const isDemoAdmin = staffLoginEmail.toLowerCase().includes('admin');
-      const mockId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 12);
-      
-      const newSession = {
-        id: mockId,
-        name: isDemoAdmin ? 'Demo Admin Officer' : 'Demo Staff Runner',
-        role: (isDemoAdmin ? 'admin' : 'staff') as 'staff' | 'admin'
-      };
-
-      // Add profile to local DB
-      dbService.createProfile({
-        id: mockId,
-        email: staffLoginEmail.trim().toLowerCase(),
-        display_name: newSession.name,
-        role: newSession.role
-      }).then(() => {
-        setStaffSession(newSession);
-        if (newSession.role === 'admin') {
-          setActiveRole('admin');
-        } else {
-          setActiveRole('staff');
-        }
-        setStaffLoginEmail('');
-        fetchActiveData();
-      });
+  /** Lightweight refresh after placing an order — skips menu/profiles. */
+  const refreshOrdersAndTables = async () => {
+    try {
+      const [loadedOrders, loadedTables] = await Promise.all([
+        dbService.getOrders(),
+        dbService.getTables().catch(() => []),
+      ]);
+      setOrders(loadedOrders);
+      setTables(loadedTables);
+    } catch (err) {
+      console.error("Error refreshing orders:", err);
     }
   };
 
-  const handleStaffLogout = () => {
+  useEffect(() => {
+    if (supabaseConnected && staffSession && (activeRole === 'admin' || activeRole === 'staff')) {
+      if (activeRole === 'admin') {
+        fetchActiveData();
+      } else {
+        refreshOrdersAndTables();
+      }
+    }
+  }, [activeRole, supabaseConnected, staffSession?.id]);
+
+  const getAuthErrorMessage = (err: any) => {
+    const message = err?.message || '';
+    const lower = message.toLowerCase();
+
+    if (err?.status === 400 || lower.includes('invalid login credentials') || lower.includes('invalid credentials')) {
+      return 'The email or password is incorrect. If this is the first login, please use the temporary password issued by the admin.';
+    }
+
+    if (err?.status === 500 || lower.includes('internal server error') || lower.includes('fetch failed')) {
+      return 'Supabase is temporarily rejecting the sign-in request. Please try again in a moment or confirm the account exists.';
+    }
+
+    return message || 'Unable to sign in with the provided Supabase account.';
+  };
+
+  const handleStaffLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+
+    if (!staffLoginEmail.trim() || !staffLoginPassword.trim()) {
+      setAuthError('Please enter your email and password.');
+      return;
+    }
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      setAuthError('Supabase is not connected.');
+      return;
+    }
+
+    setAuthLoading(true);
+    try {
+      const { data: { session }, error } = await supabase.auth.signInWithPassword({
+        email: staffLoginEmail.trim().toLowerCase(),
+        password: staffLoginPassword
+      });
+
+      if (error || !session?.user) {
+        throw error || new Error('Invalid email or password.');
+      }
+
+      const mustChangePassword = Boolean(session.user.user_metadata?.must_change_password);
+      if (mustChangePassword) {
+        setPasswordChangeRequiredFor({ id: session.user.id, email: session.user.email || staffLoginEmail.trim().toLowerCase() });
+        setStaffSession(null);
+        setAuthError('Please choose a new password before continuing.');
+        setStaffLoginPassword('');
+        return;
+      }
+
+      const profile = await resolveStaffSession(session.user.id, session.user.email || staffLoginEmail.trim().toLowerCase());
+      setStaffSession(profile);
+      setActiveRole(profile.role === 'admin' ? 'admin' : 'staff');
+      setStaffLoginEmail('');
+      setStaffLoginPassword('');
+      setPasswordChangeRequiredFor(null);
+      await fetchActiveData();
+    } catch (err: any) {
+      setStaffSession(null);
+      setAuthError(getAuthErrorMessage(err));
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordChangeError('');
+
+    if (!newPassword.trim() || newPassword.length < 8) {
+      setPasswordChangeError('Please use a password with at least 8 characters.');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordChangeError('The new passwords do not match.');
+      return;
+    }
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      setPasswordChangeError('Supabase is not connected.');
+      return;
+    }
+
+    setPasswordChangeLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+        data: { must_change_password: false }
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData.user) {
+        throw userError || new Error('Unable to refresh your session.');
+      }
+
+      const profile = await resolveStaffSession(userData.user.id, userData.user.email || passwordChangeRequiredFor?.email || '');
+      setStaffSession(profile);
+      setActiveRole(profile.role === 'admin' ? 'admin' : 'staff');
+      setPasswordChangeRequiredFor(null);
+      setNewPassword('');
+      setConfirmPassword('');
+      await fetchActiveData();
+    } catch (err: any) {
+      setPasswordChangeError(err.message || 'Unable to update your password right now.');
+    } finally {
+      setPasswordChangeLoading(false);
+    }
+  };
+
+  const handleStaffLogout = async () => {
+    const supabase = getSupabase();
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
     setStaffSession(null);
+    setAuthError('');
+    setPasswordChangeRequiredFor(null);
+    setStaffLoginPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setPasswordChangeError('');
     setActiveRole('customer');
   };
+
+  const canAccessStaffTabs = Boolean(staffSession && (staffSession.role === 'staff' || staffSession.role === 'admin'));
+  const canAccessAdminTab = Boolean(staffSession && staffSession.role === 'admin');
+  const canAccessChatbotTab = canAccessStaffTabs;
 
   return (
     <div className="min-h-screen bg-noir-bg flex flex-col font-sans text-noir-text" id="main-app-viewport">
@@ -174,7 +361,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* TESTING SANDBOX PANEL: Role switcher */}
+          {/* Role switcher */}
           <div className="flex items-center bg-noir-sidebar p-1 rounded-xl border border-noir-border text-xs font-medium max-w-full overflow-x-auto scrollbar-none">
             <button
               onClick={() => setActiveRole('customer')}
@@ -186,63 +373,57 @@ export default function App() {
             >
               <Pizza className="w-3.5 h-3.5" /> Dine-In Customer
             </button>
-            
-            <button
-              onClick={() => {
-                if (staffSession && (staffSession.role === 'staff' || staffSession.role === 'admin')) {
-                  setActiveRole('staff');
-                } else {
-                  setActiveRole('staff');
-                }
-              }}
-              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeRole === 'staff' 
-                  ? 'bg-noir-highlight text-noir-gold border border-noir-gold-o20 font-semibold' 
-                  : 'text-noir-muted hover:text-noir-text hover:bg-noir-highlight/40'
-              }`}
-            >
-              <ChefHat className="w-3.5 h-3.5" /> Staff Kitchen
-            </button>
+
+            {canAccessStaffTabs && (
+              <button
+                onClick={() => setActiveRole('staff')}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  activeRole === 'staff' 
+                    ? 'bg-noir-highlight text-noir-gold border border-noir-gold-o20 font-semibold' 
+                    : 'text-noir-muted hover:text-noir-text hover:bg-noir-highlight/40'
+                }`}
+              >
+                <ChefHat className="w-3.5 h-3.5" /> Staff Kitchen
+              </button>
+            )}
+
+            {canAccessAdminTab && (
+              <button
+                onClick={() => setActiveRole('admin')}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  activeRole === 'admin' 
+                    ? 'bg-noir-highlight text-noir-gold border border-noir-gold-o20 font-semibold' 
+                    : 'text-noir-muted hover:text-noir-text hover:bg-noir-highlight/40'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" /> Admin Analytics
+              </button>
+            )}
 
             <button
-              onClick={() => {
-                if (staffSession && staffSession.role === 'admin') {
-                  setActiveRole('admin');
-                } else {
-                  setActiveRole('admin');
-                }
-              }}
+              onClick={() => setActiveRole('help')}
               className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeRole === 'admin' 
+                activeRole === 'help' 
                   ? 'bg-noir-highlight text-noir-gold border border-noir-gold-o20 font-semibold' 
                   : 'text-noir-muted hover:text-noir-text hover:bg-noir-highlight/40'
               }`}
+              title="App help, setup guide, roles, features, and FAQ"
             >
-              <ShieldCheck className="w-3.5 h-3.5" /> Admin Analytics
+              <BookOpen className="w-3.5 h-3.5" /> Help
             </button>
 
-            <button
-              onClick={() => setActiveRole('chatbot')}
-              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeRole === 'chatbot' 
-                  ? 'bg-noir-highlight text-noir-gold border border-noir-gold-o20 font-semibold' 
-                  : 'text-noir-muted hover:text-noir-text hover:bg-noir-highlight/40'
-              }`}
-            >
-              <Bot className="w-3.5 h-3.5" /> Support Chat
-            </button>
-
-            <button
-              onClick={() => setActiveRole('config')}
-              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeRole === 'config' 
-                  ? 'bg-noir-highlight text-noir-gold border border-noir-gold-o20 font-semibold' 
-                  : 'text-noir-muted hover:text-noir-text hover:bg-noir-highlight/40'
-              }`}
-              title="View Environment Variables, database link diagnostic logs, and copy Supabase SQL tables structure"
-            >
-              <Database className="w-3.5 h-3.5" /> Setup
-            </button>
+            {canAccessChatbotTab && (
+              <button
+                onClick={() => setActiveRole('chatbot')}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  activeRole === 'chatbot' 
+                    ? 'bg-noir-highlight text-noir-gold border border-noir-gold-o20 font-semibold' 
+                    : 'text-noir-muted hover:text-noir-text hover:bg-noir-highlight/40'
+                }`}
+              >
+                <Bot className="w-3.5 h-3.5" /> Support Chat
+              </button>
+            )}
           </div>
 
           {/* Sync action / profile status */}
@@ -278,135 +459,174 @@ export default function App() {
       {/* 2. Main Content Canvas */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 min-h-0">
         
+        {!loading && menuLoadStatus?.hasErrors && (
+          <div className="mb-6 rounded-xl border border-amber-900/40 bg-amber-950/30 p-4 text-sm text-amber-200 space-y-2">
+            <div className="flex items-start gap-2 font-semibold text-amber-100">
+              <AlertTriangle className="w-5 h-5 shrink-0 text-amber-400" />
+              <span>Some menu files in <code className="text-amber-300">input_data/</code> could not be loaded at startup.</span>
+            </div>
+            <p className="text-xs text-amber-200/90">
+              The app will continue running. Correct the files below and re-upload them via <strong>Admin → Pizza &amp; Master Menu → Bulk Upload</strong> after sign-in, or replace the files and restart the server.
+            </p>
+            <ul className="text-xs list-disc pl-5 space-y-1 max-h-32 overflow-y-auto text-amber-100/90">
+              {menuLoadStatus.files.flatMap(f => {
+                const lines: string[] = [];
+                if (f.skipReason) lines.push(`${f.file}: ${f.skipReason}`);
+                return [...lines, ...f.errors.map(e => `${f.file}: ${e}`)];
+              })}
+            </ul>
+          </div>
+        )}
+
         {loading ? (
           <div className="flex flex-col items-center justify-center py-24 text-noir-dim space-y-3.5">
             <RefreshCw className="w-10 h-10 text-noir-gold animate-spin" />
             <p className="text-xs font-mono tracking-widest uppercase">Initializing connection systems...</p>
           </div>
-        ) : (
-          <div className="space-y-6">
-            
-            {/* IF DINE-IN CUSTOMER MODE */}
-            {activeRole === 'customer' && (
-              <div className="space-y-4">
-                {/* Check if staff logged in check: "The customers should be able to start a new transaction after the staff has logged in." */}
-                {!staffSession && (
-                  <div className="p-4 bg-noir-card border border-noir-border rounded-2xl text-xs space-y-2 flex items-start gap-3">
-                    <ShieldAlert className="w-5 h-5 text-noir-gold flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-serif italic text-sm text-noir-gold">Staff Supervision Mode Active</p>
-                      <p className="leading-snug text-noir-muted mt-1">To place pizza orders, a staff member must first log in using the Shift Login panel on the right or via the "Staff Kitchen" tab in the header. Once authorized, client ordering transaction modules are unlocked.</p>
-                      <button
-                        onClick={() => setActiveRole('staff')}
-                        className="mt-3 px-3 py-1.5 bg-noir-gold hover:bg-noir-gold-hover text-black font-semibold rounded text-[10px] transition-colors"
-                      >
-                        Bypass & Sign In as Staff
-                      </button>
-                    </div>
+        ) : activeRole === 'help' ? (
+          <AppHelp />
+        ) : !staffSession ? (
+          <div className="max-w-md mx-auto bg-noir-card border border-noir-border rounded-2xl p-6 shadow-xl space-y-4">
+            <div className="text-center pb-3 border-b border-noir-border">
+              <ChefHat className="w-10 h-10 text-noir-gold mx-auto" />
+              <h3 className="text-lg font-serif italic text-noir-text mt-2">Staff Access Required</h3>
+              <p className="text-xs text-noir-muted mt-1">Staff sign-in required for ordering. Admins add users under <strong className="text-noir-text">Admin Analytics → User Management</strong>. Login details are emailed to the user; they must change their password on first login.</p>
+            </div>
+
+            {passwordChangeRequiredFor ? (
+              <form onSubmit={handlePasswordChange} className="space-y-4">
+                <div className="rounded-lg border border-amber-900/40 bg-amber-950/20 px-3 py-2 text-[11px] text-amber-300">
+                  Set a new password for {passwordChangeRequiredFor.email}. This is required on the first login after your temporary password is issued.
+                </div>
+
+                <div className="space-y-1 text-xs">
+                  <label htmlFor="new-password" className="block font-semibold text-noir-dim uppercase text-[9px] tracking-wider">New password *</label>
+                  <input
+                    id="new-password"
+                    type="password"
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full px-3 py-2 bg-noir-panel border border-noir-border focus:border-noir-gold outline-none rounded-xl text-noir-text transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1 text-xs">
+                  <label htmlFor="confirm-password" className="block font-semibold text-noir-dim uppercase text-[9px] tracking-wider">Confirm password *</label>
+                  <input
+                    id="confirm-password"
+                    type="password"
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full px-3 py-2 bg-noir-panel border border-noir-border focus:border-noir-gold outline-none rounded-xl text-noir-text transition-all"
+                  />
+                </div>
+
+                {passwordChangeError && (
+                  <div className="rounded-lg border border-red-900/40 bg-red-950/30 px-3 py-2 text-[11px] text-red-300">
+                    {passwordChangeError}
                   </div>
                 )}
-                
+
+                <button
+                  type="submit"
+                  disabled={passwordChangeLoading}
+                  className="w-full py-2.5 bg-noir-gold hover:bg-noir-gold-hover disabled:opacity-70 text-black font-semibold text-xs rounded-xl transition-all cursor-pointer shadow-md"
+                >
+                  {passwordChangeLoading ? 'Updating password…' : 'Set new password'}
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleStaffLogin} className="space-y-4">
+                <div className="space-y-1 text-xs">
+                  <label htmlFor="staff-email" className="block font-semibold text-noir-dim uppercase text-[9px] tracking-wider">Email *</label>
+                  <input
+                    id="staff-email"
+                    type="email"
+                    required
+                    value={staffLoginEmail}
+                    onChange={(e) => setStaffLoginEmail(e.target.value)}
+                    className="w-full px-3 py-2 bg-noir-panel border border-noir-border focus:border-noir-gold outline-none rounded-xl text-noir-text transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1 text-xs">
+                  <label htmlFor="staff-password" className="block font-semibold text-noir-dim uppercase text-[9px] tracking-wider">Password *</label>
+                  <input
+                    id="staff-password"
+                    type="password"
+                    required
+                    value={staffLoginPassword}
+                    onChange={(e) => setStaffLoginPassword(e.target.value)}
+                    className="w-full px-3 py-2 bg-noir-panel border border-noir-border focus:border-noir-gold outline-none rounded-xl text-noir-text transition-all"
+                  />
+                </div>
+
+                {authError && (
+                  <div className="rounded-lg border border-red-900/40 bg-red-950/30 px-3 py-2 text-[11px] text-red-300">
+                    {authError}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={authLoading}
+                  className="w-full py-2.5 bg-noir-gold hover:bg-noir-gold-hover disabled:opacity-70 text-black font-semibold text-xs rounded-xl transition-all cursor-pointer shadow-md"
+                >
+                  {authLoading ? 'Signing in…' : 'Sign in with Supabase'}
+                </button>
+              </form>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {activeRole === 'customer' && (
+              <div className="space-y-4">
                 <OrderingFlow 
                   menuItems={menuItems} 
-                  onOrderPlaced={fetchActiveData} 
+                  appSettings={appSettings}
+                  onOrderPlaced={refreshOrdersAndTables} 
                   staffLoggedIn={!!staffSession}
-                  activeTableParam={scannedTable}
+                  lockedTable={lockedTable}
+                  scannedTableQr={scannedTableQr}
+                  activeTableOrders={activeTableOrders}
+                  allTables={tables}
+                  availableTables={lockedTable ? [lockedTable] : tables.filter(t => !t.is_in_use)}
                 />
               </div>
             )}
 
-            {/* IF STAFF OPERATIONS TAB */}
-            {activeRole === 'staff' && (
-              <div>
-                {staffSession && (staffSession.role === 'staff' || staffSession.role === 'admin') ? (
-                  <StaffDashboard 
-                    orders={orders} 
-                    onRefresh={fetchActiveData} 
-                    staffId={staffSession.id}
-                    staffName={staffSession.name}
-                  />
-                ) : (
-                  /* Render staff login screen */
-                  <div className="max-w-md mx-auto bg-noir-card border border-noir-border rounded-2xl p-6 shadow-xl space-y-4">
-                    <div className="text-center pb-3 border-b border-noir-border">
-                      <ChefHat className="w-10 h-10 text-noir-gold mx-auto" />
-                      <h3 className="text-lg font-serif italic text-noir-text mt-2">Staff Shift Login</h3>
-                      <p className="text-xs text-noir-muted mt-1">Authorize your device to process kitchen pizzas and print table QRs.</p>
-                    </div>
-
-                    <form onSubmit={handleStaffLogin} className="space-y-4">
-                      <div className="space-y-1 text-xs">
-                        <label className="block font-semibold text-noir-dim uppercase text-[9px] tracking-wider">Pizzeria Staff Email *</label>
-                        <input
-                          type="email"
-                          required
-                          placeholder="e.g. staff1@pizzeria.com or write 'admin@pizzeria.com' for admin demo"
-                          value={staffLoginEmail}
-                          onChange={(e) => setStaffLoginEmail(e.target.value)}
-                          className="w-full px-3 py-2 bg-noir-panel border border-noir-border focus:border-noir-gold outline-none rounded-xl text-noir-text transition-all"
-                        />
-                        <p className="text-[10px] text-noir-dim mt-1">Tip: Write "admin@pizzeria.com" or "staff1@pizzeria.com" for instant automatic bypass sign-in.</p>
-                      </div>
-
-                      <button
-                        type="submit"
-                        className="w-full py-2.5 bg-noir-gold hover:bg-noir-gold-hover text-black font-semibold text-xs rounded-xl transition-all cursor-pointer shadow-md"
-                      >
-                        Start shift & Log In
-                      </button>
-                    </form>
-                  </div>
-                )}
-              </div>
+            {activeRole === 'staff' && canAccessStaffTabs && (
+              <StaffDashboard 
+                orders={orders} 
+                tables={tables}
+                appSettings={appSettings}
+                onRefresh={refreshOrdersAndTables} 
+                staffId={staffSession.id}
+                staffName={staffSession.name}
+              />
             )}
 
-            {/* IF EXECUTIVE ADMIN CONTROL TAB */}
-            {activeRole === 'admin' && (
-              <div>
-                {staffSession && staffSession.role === 'admin' ? (
-                  <AdminDashboard 
-                    orders={orders} 
-                    menuItems={menuItems} 
-                    profiles={profiles} 
-                    onRefresh={fetchActiveData}
-                    currentStaffId={staffSession.id}
-                  />
-                ) : (
-                  /* Render admin login/bypass alert */
-                  <div className="max-w-md mx-auto bg-noir-card border border-noir-border rounded-2xl p-6 shadow-xl space-y-4">
-                    <div className="text-center pb-3 border-b border-noir-border">
-                      <ShieldCheck className="w-10 h-10 text-noir-gold mx-auto" />
-                      <h3 className="text-lg font-serif italic text-noir-text mt-2">Executive Access Required</h3>
-                      <p className="text-xs text-noir-muted mt-1">Secure dashboard contains analytical charts and financial reports.</p>
-                    </div>
-
-                    <form onSubmit={handleStaffLogin} className="space-y-4">
-                      <div className="space-y-1 text-xs">
-                        <label className="block font-semibold text-noir-dim uppercase text-[9px] tracking-wider">Admin Email *</label>
-                        <input
-                          type="email"
-                          required
-                          placeholder="Write 'admin@pizzeria.com' to bypass"
-                          value={staffLoginEmail}
-                          onChange={(e) => setStaffLoginEmail(e.target.value)}
-                          className="w-full px-3 py-2 bg-noir-panel border border-noir-border focus:border-noir-gold outline-none rounded-xl text-noir-text transition-all"
-                        />
-                      </div>
-
-                      <button
-                        type="submit"
-                        className="w-full py-2.5 bg-noir-gold hover:bg-noir-gold-hover text-black font-semibold text-xs rounded-xl transition-all cursor-pointer shadow-md"
-                      >
-                        Unlock Executive Dashboard
-                      </button>
-                    </form>
-                  </div>
-                )}
-              </div>
+            {activeRole === 'admin' && canAccessAdminTab && (
+              <AdminDashboard 
+                orders={orders} 
+                menuItems={menuItems} 
+                profiles={profiles} 
+                tables={tables}
+                appSettings={appSettings}
+                menuLoadStatus={menuLoadStatus}
+                onSettingsSaved={setAppSettings}
+                onMenuReload={(status) => {
+                  setMenuLoadStatus(status);
+                  fetchActiveData();
+                }}
+                onRefresh={fetchActiveData}
+                currentStaffId={staffSession.id}
+              />
             )}
 
-            {/* IF SUPPORT CHATBOT CHAT VIEW */}
-            {activeRole === 'chatbot' && (
+            {activeRole === 'chatbot' && canAccessChatbotTab && (
               <div className="max-w-4xl mx-auto">
                 <Chatbot 
                   currentOrders={orders} 
@@ -414,15 +634,6 @@ export default function App() {
                   isAdmin={staffSession?.role === 'admin'} 
                 />
               </div>
-            )}
-
-            {/* IF KEY CONFIGURATION SETUP VIEW */}
-            {activeRole === 'config' && (
-              <ConfigGuide 
-                config={config} 
-                supabaseConnected={supabaseConnected} 
-                onRefresh={initializeConfig}
-              />
             )}
 
           </div>

@@ -1,0 +1,28 @@
+--- ORDER ---
+timestamp: 2026-07-05T17:21:23.2+00:00
+order_id: 5
+customer_name: Guest
+customer_phone: 6000000001
+item: Test | unit_price: 100 | quantity: 1
+subtotal: 100
+discount: 0
+gst: 5
+final_total: 105
+payment_mode: Cash
+
+--- ORDER ---
+timestamp: 2026-07-05T17:50:02.669+00:00
+order_id: 7
+customer_name: Sameer
+customer_phone: 9423014652
+item: Cheese Burst | unit_price: 229 | quantity: 1
+item: BBQ Chicken | unit_price: 379 | quantity: 1
+item: Veggie Supreme | unit_price: 379 | quantity: 1
+item: Black Olives | unit_price: 49 | quantity: 1
+item: Extra Cheese | unit_price: 60 | quantity: 1
+subtotal: 1096
+discount: 0
+gst: 197.28
+final_total: 1293.28
+payment_mode: Cash
+
