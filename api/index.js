@@ -1,9 +1,13 @@
 /**
  * Vercel serverless entry — forwards /api/* to the Express app built as dist/server.cjs
+ * Uses ESM because package.json has "type": "module".
  */
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
 let invoke;
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   if (!invoke) {
     const mod = require("../dist/server.cjs");
     invoke = mod.handler;
@@ -12,4 +16,4 @@ module.exports = async (req, res) => {
     }
   }
   return invoke(req, res);
-};
+}
