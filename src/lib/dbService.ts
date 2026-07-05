@@ -131,18 +131,34 @@ export const dbService = {
 
   async createProfile(profile: Omit<Profile, 'created_at' | 'updated_at'>): Promise<Profile> {
     const supabase = getSupabase();
+    const emailLower = profile.email.trim().toLowerCase();
+    
+    if (!emailLower.includes('@') || emailLower.length < 5) {
+      throw new Error("Invalid staff email address format.");
+    }
+
     const newProfile = {
       ...profile,
+      email: emailLower,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
 
     if (supabase) {
+      // Duplication check in Supabase
+      const { data: existing } = await supabase.from('profiles').select('id').eq('email', emailLower).maybeSingle();
+      if (existing) {
+        throw new Error(`Profile with email ${emailLower} already exists in database.`);
+      }
+
       const { data, error } = await supabase.from('profiles').insert(newProfile).select().single();
       if (error) throw error;
       return data;
     } else {
       const list = JSON.parse(localStorage.getItem('pz_profiles') || '[]');
+      if (list.some((p: Profile) => p.email.toLowerCase() === emailLower)) {
+        throw new Error(`Profile with email ${emailLower} already exists.`);
+      }
       list.push(newProfile);
       localStorage.setItem('pz_profiles', JSON.stringify(list));
       return newProfile;
@@ -300,21 +316,55 @@ export const dbService = {
 
   async createMenuItem(item: Omit<MenuItem, 'id' | 'created_at' | 'updated_at'>): Promise<MenuItem> {
     const supabase = getSupabase();
+    
+    // Strict Code & Category Validation
+    const code = item.code.trim().toUpperCase();
+    if (code.length < 3 || code.length > 10) {
+      throw new Error("Item Code must be between 3 and 10 characters.");
+    }
+    if (!/^[A-Z0-9_-]+$/.test(code)) {
+      throw new Error("Item Code must contain only alphanumeric characters, dashes, or underscores.");
+    }
+
+    if (item.category === 'pizza' && !code.startsWith('PIZ')) {
+      throw new Error("Code mismatch: Pizza category must start with 'PIZ' prefix (e.g. PIZ08).");
+    }
+    if (item.category === 'base' && !code.startsWith('BAS')) {
+      throw new Error("Code mismatch: Base Crust category must start with 'BAS' prefix (e.g. BAS04).");
+    }
+    if (item.category === 'topping' && !code.startsWith('TOP')) {
+      throw new Error("Code mismatch: Topping category must start with 'TOP' prefix (e.g. TOP12).");
+    }
+
     if (item.price_inr <= 0) {
       throw new Error("Price must be greater than 0 INR.");
     }
+    if (item.price_inr > 10000) {
+      throw new Error("Price cannot exceed 10,000 INR.");
+    }
+
+    const newItemPayload = {
+      ...item,
+      code
+    };
 
     if (supabase) {
-      const { data, error } = await supabase.from('menu_items').insert(item).select().single();
+      // Duplication check in Supabase
+      const { data: existing } = await supabase.from('menu_items').select('id').eq('code', code).maybeSingle();
+      if (existing) {
+        throw new Error(`Menu Item with code ${code} already exists in the database.`);
+      }
+
+      const { data, error } = await supabase.from('menu_items').insert(newItemPayload).select().single();
       if (error) throw error;
       return data;
     } else {
       const list = JSON.parse(localStorage.getItem('pz_menu_items') || '[]');
-      if (list.some((m: MenuItem) => m.code.toUpperCase() === item.code.toUpperCase())) {
-        throw new Error(`Menu Item with code ${item.code} already exists`);
+      if (list.some((m: MenuItem) => m.code.toUpperCase() === code)) {
+        throw new Error(`Menu Item with code ${code} already exists`);
       }
       const newItem: MenuItem = {
-        ...item,
+        ...newItemPayload,
         id: list.length > 0 ? Math.max(...list.map((m: any) => m.id)) + 1 : 1,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -530,14 +580,29 @@ export const dbService = {
   ): Promise<OrderWithItems> {
     const supabase = getSupabase();
     
-    // Check if cancellation is allowed
-    // Cancellations are only allowed for orders in 'confirmed' status
+    // State machine transit checks to disallow any incorrect operations beyond the baseline
     const currentOrders = await this.getOrders();
     const orderToUpdate = currentOrders.find(o => o.id === orderId);
     if (!orderToUpdate) throw new Error("Order not found");
 
+    if (orderToUpdate.status === 'cancelled') {
+      throw new Error("Invalid operation: Order is already cancelled and cannot be modified.");
+    }
+    if (orderToUpdate.status === 'delivered') {
+      throw new Error("Invalid operation: Order has already been delivered and served.");
+    }
+
     if (newStatus === 'cancelled' && orderToUpdate.status !== 'confirmed') {
       throw new Error(`Cancellation is forbidden. Order is already in ${orderToUpdate.status} phase.`);
+    }
+    if (newStatus === 'preparing' && orderToUpdate.status !== 'confirmed') {
+      throw new Error(`Invalid transition: Only confirmed orders can be set to preparing. Current state: ${orderToUpdate.status}`);
+    }
+    if (newStatus === 'ready' && orderToUpdate.status !== 'preparing') {
+      throw new Error(`Invalid transition: Only preparing orders can be marked as ready. Current state: ${orderToUpdate.status}`);
+    }
+    if (newStatus === 'delivered' && orderToUpdate.status !== 'ready') {
+      throw new Error(`Invalid transition: Only ready orders can be marked as delivered. Current state: ${orderToUpdate.status}`);
     }
 
     const updates: Partial<Order> = {

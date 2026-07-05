@@ -159,6 +159,17 @@ export default function OrderingFlow({ menuItems, onOrderPlaced, staffLoggedIn, 
       return;
     }
 
+    // Strict UI and business boundary validations to disallow any incorrect operations
+    if (tableNumber < 1 || tableNumber > 20) {
+      setSubmitMsg({ type: 'error', text: "⛔ Table number must be between 1 and 20." });
+      return;
+    }
+
+    if (!['Cash', 'Card', 'UPI'].includes(paymentMode)) {
+      setSubmitMsg({ type: 'error', text: "⛔ Invalid payment mode selected." });
+      return;
+    }
+
     try {
       // 1. Double check or register customer in master table first
       let customerId: number | null = null;
@@ -284,11 +295,13 @@ export default function OrderingFlow({ menuItems, onOrderPlaced, staffLoggedIn, 
   return (
     <div className="space-y-6" id="ordering-flow">
       {/* Navigation tabs */}
-      <div className="flex bg-white p-1 rounded-xl border border-gray-100 shadow-sm font-sans max-w-sm">
+      <div className="flex bg-noir-sidebar p-1 rounded-xl border border-noir-border shadow-md font-sans max-w-sm">
         <button
           onClick={() => { setActiveTab('order'); setSubmitMsg(null); }}
           className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-            activeTab === 'order' ? 'bg-red-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            activeTab === 'order' 
+              ? 'bg-noir-highlight text-noir-gold border border-noir-gold-o20 shadow-sm' 
+              : 'text-noir-muted hover:text-noir-text hover:bg-noir-highlight/30'
           }`}
         >
           <Pizza className="w-4 h-4" /> Pizza Self-Ordering
@@ -296,7 +309,9 @@ export default function OrderingFlow({ menuItems, onOrderPlaced, staffLoggedIn, 
         <button
           onClick={() => { setActiveTab('history'); setVerifyError(null); setVerifiedHistory(null); }}
           className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-            activeTab === 'history' ? 'bg-red-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            activeTab === 'history' 
+              ? 'bg-noir-highlight text-noir-gold border border-noir-gold-o20 shadow-sm' 
+              : 'text-noir-muted hover:text-noir-text hover:bg-noir-highlight/30'
           }`}
         >
           <History className="w-4 h-4" /> Verify Order History
@@ -305,11 +320,13 @@ export default function OrderingFlow({ menuItems, onOrderPlaced, staffLoggedIn, 
 
       {submitMsg && (
         <div className={`p-4 rounded-xl text-xs font-semibold flex items-center gap-2 border ${
-          submitMsg.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'
+          submitMsg.type === 'success' 
+            ? 'bg-noir-panel border-emerald-500/20 text-emerald-400' 
+            : 'bg-noir-panel border-red-500/20 text-red-400'
         }`} id="submit-status-msg">
-          {submitMsg.type === 'success' ? <CheckCircle2 className="w-5 h-5 text-emerald-500" /> : <AlertCircle className="w-5 h-5 text-red-500" />}
-          <span className="flex-1">{submitMsg.text}</span>
-          <button onClick={() => setSubmitMsg(null)} className="text-gray-400 hover:text-gray-600">×</button>
+          {submitMsg.type === 'success' ? <CheckCircle2 className="w-5 h-5 text-emerald-400" /> : <AlertCircle className="w-5 h-5 text-red-400" />}
+          <span className="flex-1 font-serif italic text-[13px]">{submitMsg.text}</span>
+          <button onClick={() => setSubmitMsg(null)} className="text-noir-dim hover:text-noir-text text-base px-1">×</button>
         </div>
       )}
 
@@ -321,10 +338,10 @@ export default function OrderingFlow({ menuItems, onOrderPlaced, staffLoggedIn, 
           <div className="lg:col-span-2 space-y-6">
             
             {/* Step 1: Base selection */}
-            <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-3">
+            <div className="bg-noir-card p-5 rounded-2xl border border-noir-border shadow-lg space-y-3">
               <div>
-                <h3 className="font-bold text-gray-800 text-sm">1. Select Pizza Crust Base</h3>
-                <p className="text-xs text-gray-500">Every slice of heaven pizza requires a hand-tossed base.</p>
+                <h3 className="font-serif italic text-noir-gold text-base">1. Select Pizza Crust Base</h3>
+                <p className="text-xs text-noir-muted">Every slice of heaven pizza requires a hand-tossed base.</p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {selectedBases.map(base => (
@@ -333,39 +350,39 @@ export default function OrderingFlow({ menuItems, onOrderPlaced, staffLoggedIn, 
                     onClick={() => setCartBaseId(base.id)}
                     className={`p-3.5 border rounded-xl cursor-pointer transition-all flex flex-col justify-between ${
                       cartBaseId === base.id 
-                        ? 'border-2 border-red-600 bg-red-50/20 shadow-sm' 
-                        : 'border-gray-100 hover:border-gray-200 bg-white'
+                        ? 'border-2 border-noir-gold bg-noir-highlight shadow-md' 
+                        : 'border-noir-border hover:border-noir-border-light bg-noir-panel'
                     }`}
                   >
                     <div className="flex justify-between items-start gap-1">
-                      <span className="font-bold text-gray-800 text-xs font-sans">{base.name}</span>
-                      <span className="font-mono text-xs font-extrabold text-red-600">+₹{base.price_inr}</span>
+                      <span className="font-semibold text-noir-text text-xs font-sans">{base.name}</span>
+                      <span className="font-mono text-xs font-bold text-noir-gold">+₹{base.price_inr}</span>
                     </div>
-                    <p className="text-[10px] text-gray-400 mt-1 italic leading-tight">{base.description || 'Traditional baked'}</p>
+                    <p className="text-[10px] text-noir-dim mt-1 italic leading-tight">{base.description || 'Traditional baked'}</p>
                   </div>
                 ))}
               </div>
             </div>
 
             {/* Step 2: Choose Pizzas */}
-            <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-4">
+            <div className="bg-noir-card p-5 rounded-2xl border border-noir-border shadow-lg space-y-4">
               <div>
-                <h3 className="font-bold text-gray-800 text-sm">2. Select Your Pizza Variety</h3>
-                <p className="text-xs text-gray-500">Indulge in our master pizza recipes, baked freshly with premium sauce.</p>
+                <h3 className="font-serif italic text-noir-gold text-base">2. Select Your Pizza Variety</h3>
+                <p className="text-xs text-noir-muted">Indulge in our master pizza recipes, baked freshly with premium sauce.</p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {selectedPizzas.map(pizza => {
                   const qty = cart[pizza.id] || 0;
                   return (
-                    <div key={pizza.id} className="p-4 border border-gray-100 rounded-xl bg-white flex justify-between items-center gap-3">
+                    <div key={pizza.id} className="p-4 border border-noir-border rounded-xl bg-noir-panel flex justify-between items-center gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center space-x-1.5">
-                          <span className="font-mono font-bold text-[9px] text-gray-400 bg-gray-50 px-1 border rounded">{pizza.code}</span>
-                          <h4 className="font-bold text-gray-800 text-xs font-sans truncate">{pizza.name}</h4>
+                          <span className="font-mono font-bold text-[9px] text-noir-dim bg-noir-highlight px-1.5 border border-noir-border rounded">{pizza.code}</span>
+                          <h4 className="font-semibold text-noir-text text-xs font-sans truncate">{pizza.name}</h4>
                         </div>
-                        <p className="text-[10px] text-gray-400 mt-1 italic line-clamp-2 leading-tight">{pizza.description}</p>
-                        <p className="font-mono text-xs font-extrabold text-red-600 mt-1.5">₹{pizza.price_inr}</p>
+                        <p className="text-[10px] text-noir-muted mt-1 italic line-clamp-2 leading-tight">{pizza.description}</p>
+                        <p className="font-mono text-xs font-bold text-noir-gold mt-1.5">₹{pizza.price_inr}</p>
                       </div>
 
                       <div className="flex items-center space-x-2.5">
@@ -373,14 +390,14 @@ export default function OrderingFlow({ menuItems, onOrderPlaced, staffLoggedIn, 
                           <>
                             <button
                               onClick={() => handleUpdateQty(pizza.id, -1)}
-                              className="p-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg cursor-pointer transition-colors"
+                              className="p-1.5 bg-noir-highlight hover:bg-noir-sidebar text-noir-text rounded-lg cursor-pointer transition-colors border border-noir-border"
                             >
                               <Minus className="w-3.5 h-3.5" />
                             </button>
-                            <span className="font-mono font-bold text-xs text-gray-800 w-4 text-center">{qty}</span>
+                            <span className="font-mono font-bold text-xs text-noir-text w-4 text-center">{qty}</span>
                             <button
                               onClick={() => handleUpdateQty(pizza.id, 1)}
-                              className="p-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg cursor-pointer transition-colors"
+                              className="p-1.5 bg-noir-gold hover:bg-noir-gold-hover text-black rounded-lg cursor-pointer transition-colors"
                             >
                               <Plus className="w-3.5 h-3.5" />
                             </button>
@@ -388,7 +405,7 @@ export default function OrderingFlow({ menuItems, onOrderPlaced, staffLoggedIn, 
                         ) : (
                           <button
                             onClick={() => handleUpdateQty(pizza.id, 1)}
-                            className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-[10px] font-bold cursor-pointer transition-colors border border-red-100"
+                            className="px-3 py-1.5 bg-noir-highlight hover:bg-noir-sidebar text-noir-gold rounded-lg text-[10px] font-bold cursor-pointer transition-colors border border-noir-gold-o20"
                           >
                             Add +
                           </button>
@@ -401,36 +418,36 @@ export default function OrderingFlow({ menuItems, onOrderPlaced, staffLoggedIn, 
             </div>
 
             {/* Step 3: Add extra toppings */}
-            <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-3">
+            <div className="bg-noir-card p-5 rounded-2xl border border-noir-border shadow-lg space-y-3">
               <div>
-                <h3 className="font-bold text-gray-800 text-sm">3. Customize Toppings Slices</h3>
-                <p className="text-xs text-gray-500">Upgrade your slice of heaven pizza with our savory add-on toppings.</p>
+                <h3 className="font-serif italic text-noir-gold text-base">3. Customize Toppings Slices</h3>
+                <p className="text-xs text-noir-muted">Upgrade your slice of heaven pizza with our savory add-on toppings.</p>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {selectedToppings.map(top => {
                   const qty = cart[top.id] || 0;
                   return (
-                    <div key={top.id} className="p-3 border border-gray-100 rounded-xl bg-white flex flex-col justify-between h-24">
+                    <div key={top.id} className="p-3 border border-noir-border rounded-xl bg-noir-panel flex flex-col justify-between h-24">
                       <div className="flex justify-between items-start gap-1">
-                        <span className="font-bold text-gray-800 text-[11px] leading-tight">{top.name}</span>
-                        <span className="font-mono text-[10px] font-bold text-red-600">+₹{top.price_inr}</span>
+                        <span className="font-semibold text-noir-text text-[11px] leading-tight">{top.name}</span>
+                        <span className="font-mono text-[10px] font-bold text-noir-gold">+₹{top.price_inr}</span>
                       </div>
                       
                       <div className="flex items-center justify-between mt-2.5">
-                        <span className="text-[9px] text-gray-400 font-mono">Qty: {qty}</span>
+                        <span className="text-[9px] text-noir-dim font-mono">Qty: {qty}</span>
                         <div className="flex space-x-1">
                           {qty > 0 && (
                             <button
                               onClick={() => handleUpdateQty(top.id, -1)}
-                              className="p-1 bg-gray-100 text-gray-600 rounded cursor-pointer"
+                              className="p-1 bg-noir-highlight text-noir-muted border border-noir-border rounded cursor-pointer"
                             >
                               <Minus className="w-3 h-3" />
                             </button>
                           )}
                           <button
                             onClick={() => handleUpdateQty(top.id, 1)}
-                            className="p-1 bg-red-50 text-red-600 rounded border border-red-100 cursor-pointer"
+                            className="p-1 bg-noir-highlight text-noir-gold border border-noir-gold-o20 rounded cursor-pointer hover:bg-noir-sidebar"
                           >
                             <Plus className="w-3 h-3" />
                           </button>
@@ -445,10 +462,10 @@ export default function OrderingFlow({ menuItems, onOrderPlaced, staffLoggedIn, 
 
           {/* Right side check out card */}
           <div className="space-y-6">
-            <form onSubmit={handleCheckout} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-4">
-              <div className="flex items-center space-x-2 border-b border-gray-100 pb-3">
-                <ShoppingBag className="w-5 h-5 text-red-600" />
-                <h3 className="font-bold text-gray-800 text-sm">Interactive Checkout Cart</h3>
+            <form onSubmit={handleCheckout} className="bg-noir-card p-5 rounded-2xl border border-noir-border shadow-lg space-y-4">
+              <div className="flex items-center space-x-2 border-b border-noir-border pb-3">
+                <ShoppingBag className="w-5 h-5 text-noir-gold" />
+                <h3 className="font-serif text-noir-text text-sm">Interactive Checkout Cart</h3>
               </div>
 
               {/* List Cart items */}
@@ -457,9 +474,9 @@ export default function OrderingFlow({ menuItems, onOrderPlaced, staffLoggedIn, 
                 {cartBaseId && (() => {
                   const item = menuItems.find(m => m.id === cartBaseId);
                   return item ? (
-                    <div className="flex justify-between text-gray-700">
+                    <div className="flex justify-between text-noir-text">
                       <span>1x {item.name} (Crust)</span>
-                      <span className="font-mono text-gray-500">₹{item.price_inr}</span>
+                      <span className="font-mono text-noir-gold">₹{item.price_inr}</span>
                     </div>
                   ) : null;
                 })()}
@@ -469,45 +486,45 @@ export default function OrderingFlow({ menuItems, onOrderPlaced, staffLoggedIn, 
                   const item = menuItems.find(m => m.id === parseInt(idStr));
                   if (!item) return null;
                   return (
-                    <div key={item.id} className="flex justify-between text-gray-700">
+                    <div key={item.id} className="flex justify-between text-noir-text">
                       <span>{cart[idStr]}x {item.name}</span>
-                      <span className="font-mono text-gray-500">₹{item.price_inr * cart[idStr]}</span>
+                      <span className="font-mono text-noir-gold">₹{item.price_inr * cart[idStr]}</span>
                     </div>
                   );
                 })}
 
                 {totalCartQty === 0 && (
-                  <p className="text-center text-gray-400 text-xs py-4 italic">Your cart is empty. Click pizzas above to add.</p>
+                  <p className="text-center text-noir-dim text-xs py-4 italic">Your cart is empty. Click pizzas above to add.</p>
                 )}
               </div>
 
               {/* Billing Breakdowns */}
-              <div className="border-t border-gray-100 pt-3.5 space-y-2 text-xs font-sans">
-                <div className="flex justify-between text-gray-600">
+              <div className="border-t border-noir-border pt-3.5 space-y-2 text-xs font-sans">
+                <div className="flex justify-between text-noir-muted">
                   <span>Subtotal</span>
                   <span className="font-mono">₹{bill.subtotal}</span>
                 </div>
-                <div className="flex justify-between text-gray-600">
+                <div className="flex justify-between text-noir-muted">
                   <span>Goods and Services Tax (GST 5%)</span>
                   <span className="font-mono">₹{bill.gst}</span>
                 </div>
-                <div className="flex justify-between text-gray-800 font-bold border-t border-gray-100 pt-2 text-sm">
+                <div className="flex justify-between text-noir-text font-bold border-t border-noir-border pt-2 text-sm">
                   <span>Total Payable (INR)</span>
-                  <span className="font-mono text-red-600">₹{bill.totalPayable}</span>
+                  <span className="font-mono text-noir-gold">₹{bill.totalPayable}</span>
                 </div>
               </div>
 
               {/* Customer details fields */}
-              <div className="border-t border-gray-100 pt-3.5 space-y-3 text-xs">
-                <h4 className="font-bold text-gray-800 text-xs uppercase tracking-wider text-gray-400">Customer Checkout Details</h4>
+              <div className="border-t border-noir-border pt-3.5 space-y-3 text-xs">
+                <h4 className="font-semibold text-noir-dim text-[10px] uppercase tracking-wider">Customer Checkout Details</h4>
                 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
-                    <label className="block font-bold text-gray-500 uppercase text-[9px]">Your Table (1-20) *</label>
+                    <label className="block font-semibold text-noir-dim uppercase text-[9px] tracking-wider">Your Table (1-20) *</label>
                     <select
                       value={tableNumber}
                       onChange={(e) => setTableNumber(parseInt(e.target.value))}
-                      className="w-full px-2.5 py-2 border rounded-xl font-mono bg-gray-50"
+                      className="w-full px-2.5 py-2 bg-noir-panel border border-noir-border rounded-xl font-mono text-noir-text focus:border-noir-gold outline-none"
                     >
                       {Array.from({ length: 20 }, (_, i) => i + 1).map(num => (
                         <option key={num} value={num}>Table #{num}</option>
@@ -516,11 +533,11 @@ export default function OrderingFlow({ menuItems, onOrderPlaced, staffLoggedIn, 
                   </div>
 
                   <div className="space-y-1">
-                    <label className="block font-bold text-gray-500 uppercase text-[9px]">Payment Mode *</label>
+                    <label className="block font-semibold text-noir-dim uppercase text-[9px] tracking-wider">Payment Mode *</label>
                     <select
                       value={paymentMode}
                       onChange={(e) => setPaymentMode(e.target.value as any)}
-                      className="w-full px-2.5 py-2 border rounded-xl bg-gray-50 font-sans"
+                      className="w-full px-2.5 py-2 bg-noir-panel border border-noir-border rounded-xl text-noir-text focus:border-noir-gold outline-none"
                     >
                       <option value="UPI">UPI / QR Scan</option>
                       <option value="Card">Credit/Debit Card</option>
@@ -530,37 +547,37 @@ export default function OrderingFlow({ menuItems, onOrderPlaced, staffLoggedIn, 
                 </div>
 
                 <div className="space-y-1">
-                  <label className="block font-bold text-gray-500 uppercase text-[9px]">Full Name (PII Verification) *</label>
+                  <label className="block font-semibold text-noir-dim uppercase text-[9px] tracking-wider">Full Name (PII Verification) *</label>
                   <input
                     type="text"
                     required
                     placeholder="e.g. Rahul Kumar"
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white"
+                    className="w-full px-3 py-2 bg-noir-panel border border-noir-border rounded-xl text-noir-text focus:border-noir-gold outline-none"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="block font-bold text-gray-500 uppercase text-[9px]">10-Digit Mobile (PII Verification) *</label>
+                  <label className="block font-semibold text-noir-dim uppercase text-[9px] tracking-wider">10-Digit Mobile (PII Verification) *</label>
                   <input
                     type="tel"
                     required
                     placeholder="e.g. 9876543210"
                     value={customerPhone}
                     onChange={(e) => setCustomerPhone(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white"
+                    className="w-full px-3 py-2 bg-noir-panel border border-noir-border rounded-xl text-noir-text focus:border-noir-gold outline-none"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="block font-bold text-gray-500 uppercase text-[9px]">Delivery Address (Optional)</label>
+                  <label className="block font-semibold text-noir-dim uppercase text-[9px] tracking-wider">Delivery Address (Optional)</label>
                   <input
                     type="text"
                     placeholder="e.g. Suite 10, Sector 1"
                     value={deliveryAddress}
                     onChange={(e) => setDeliveryAddress(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white"
+                    className="w-full px-3 py-2 bg-noir-panel border border-noir-border rounded-xl text-noir-text focus:border-noir-gold outline-none"
                   />
                 </div>
               </div>
@@ -568,7 +585,7 @@ export default function OrderingFlow({ menuItems, onOrderPlaced, staffLoggedIn, 
               {/* Submit Buttons */}
               <button
                 type="submit"
-                className="w-full py-3 bg-gradient-to-r from-red-600 to-amber-500 hover:opacity-95 text-white font-bold text-xs rounded-xl shadow transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                className="w-full py-3 bg-noir-gold hover:bg-noir-gold-hover text-black font-semibold text-xs rounded-xl shadow-lg transition-all cursor-pointer flex items-center justify-center gap-1.5"
                 disabled={totalCartQty === 0}
               >
                 <Smartphone className="w-4 h-4" />
@@ -581,36 +598,36 @@ export default function OrderingFlow({ menuItems, onOrderPlaced, staffLoggedIn, 
 
       {/* RENDER VERIFY ORDER HISTORY TAB */}
       {activeTab === 'history' && (
-        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm max-w-2xl">
-          <div className="border-b border-gray-100 pb-3 mb-5">
-            <h3 className="font-bold text-gray-800 text-base flex items-center gap-1.5">
-              <History className="w-5 h-5 text-red-600" /> Secure Customer PII Verification Gate
+        <div className="bg-noir-card p-6 rounded-2xl border border-noir-border shadow-lg max-w-2xl">
+          <div className="border-b border-noir-border pb-3 mb-5">
+            <h3 className="font-serif italic text-noir-gold text-base flex items-center gap-1.5">
+              <History className="w-5 h-5" /> Secure Customer PII Verification Gate
             </h3>
-            <p className="text-xs text-gray-500 mt-1">To protect customer privacy, you must authenticate by providing matching PII credentials before order histories can be rendered.</p>
+            <p className="text-xs text-noir-muted mt-1">To protect customer privacy, you must authenticate by providing matching PII credentials before order histories can be rendered.</p>
           </div>
 
-          <form onSubmit={handleVerifyHistory} className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end bg-gray-50/50 p-4 border rounded-xl">
+          <form onSubmit={handleVerifyHistory} className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end bg-noir-panel p-4 border border-noir-border rounded-xl">
             <div className="space-y-1 text-xs">
-              <label className="block font-bold text-gray-500 uppercase text-[9px]">Enter Your Exact Name *</label>
+              <label className="block font-semibold text-noir-dim uppercase text-[9px] tracking-wider">Enter Your Exact Name *</label>
               <input
                 type="text"
                 required
                 placeholder="e.g. Rahul Kumar"
                 value={verifyName}
                 onChange={(e) => setVerifyName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 bg-white rounded-xl text-xs outline-none"
+                className="w-full px-3 py-2 bg-noir-sidebar border border-noir-border rounded-xl text-xs text-noir-text focus:border-noir-gold outline-none"
               />
             </div>
 
             <div className="space-y-1 text-xs">
-              <label className="block font-bold text-gray-500 uppercase text-[9px]">Enter Your Registered Phone *</label>
+              <label className="block font-semibold text-noir-dim uppercase text-[9px] tracking-wider">Enter Your Registered Phone *</label>
               <input
                 type="tel"
                 required
                 placeholder="e.g. 9876543210"
                 value={verifyPhone}
                 onChange={(e) => setVerifyPhone(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 bg-white rounded-xl text-xs outline-none"
+                className="w-full px-3 py-2 bg-noir-sidebar border border-noir-border rounded-xl text-xs text-noir-text focus:border-noir-gold outline-none"
               />
             </div>
 
@@ -618,7 +635,7 @@ export default function OrderingFlow({ menuItems, onOrderPlaced, staffLoggedIn, 
               <button
                 type="submit"
                 disabled={loadingHistory}
-                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ml-auto"
+                className="px-5 py-2.5 bg-noir-gold hover:bg-noir-gold-hover text-black rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ml-auto shadow-md"
               >
                 {loadingHistory ? (
                   <RefreshCw className="w-4 h-4 animate-spin" />
@@ -631,8 +648,8 @@ export default function OrderingFlow({ menuItems, onOrderPlaced, staffLoggedIn, 
           </form>
 
           {verifyError && (
-            <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-xl text-xs font-semibold text-red-800 flex items-center gap-1.5">
-              <AlertCircle className="w-4 h-4 text-red-500" />
+            <div className="mt-4 p-3 bg-noir-panel border border-red-500/20 rounded-xl text-xs font-semibold text-red-400 flex items-center gap-1.5">
+              <AlertCircle className="w-4 h-4" />
               <span>{verifyError}</span>
             </div>
           )}
@@ -640,58 +657,58 @@ export default function OrderingFlow({ menuItems, onOrderPlaced, staffLoggedIn, 
           {/* History Lists */}
           {verifiedHistory && (
             <div className="mt-6 space-y-4">
-              <h4 className="font-bold text-gray-800 text-sm border-b pb-2">Verified Order History ({verifiedHistory.length} orders found)</h4>
+              <h4 className="font-serif italic text-noir-gold text-sm border-b border-noir-border pb-2">Verified Order History ({verifiedHistory.length} orders found)</h4>
               
               {verifiedHistory.length > 0 ? (
                 <div className="space-y-4">
                   {verifiedHistory.map(o => (
-                    <div key={o.id} className="border border-gray-100 p-4 rounded-xl bg-white space-y-3.5 shadow-sm">
-                      <div className="flex justify-between items-start border-b pb-2">
+                    <div key={o.id} className="border border-noir-border p-4 rounded-xl bg-noir-panel space-y-3.5 shadow-sm">
+                      <div className="flex justify-between items-start border-b border-noir-border pb-2">
                         <div>
                           <div className="flex items-center space-x-2">
-                            <span className="font-mono text-xs font-bold text-gray-400">Order ID:</span>
-                            <span className="font-mono font-bold text-gray-800 text-xs">#{o.id}</span>
-                            <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
-                              o.status === 'confirmed' ? 'bg-blue-50 text-blue-700 border' :
-                              o.status === 'preparing' ? 'bg-amber-50 text-amber-700 border' :
-                              o.status === 'ready' ? 'bg-emerald-50 text-emerald-700 border' :
-                              o.status === 'cancelled' ? 'bg-red-50 text-red-700 border' :
-                              'bg-gray-100 text-gray-700'
+                            <span className="font-mono text-xs font-semibold text-noir-dim">Order ID:</span>
+                            <span className="font-mono font-bold text-noir-text text-xs">#{o.id}</span>
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase border ${
+                              o.status === 'confirmed' ? 'bg-blue-950/40 text-blue-300 border-blue-900/40' :
+                              o.status === 'preparing' ? 'bg-amber-950/40 text-amber-300 border-amber-900/40' :
+                              o.status === 'ready' ? 'bg-emerald-950/40 text-emerald-300 border-emerald-900/40' :
+                              o.status === 'cancelled' ? 'bg-red-950/40 text-red-300 border-red-900/40' :
+                              'bg-noir-highlight text-noir-muted border-noir-border'
                             }`}>
                               {o.status}
                             </span>
                           </div>
-                          <p className="text-[10px] text-gray-400 mt-1 font-mono">Date: {new Date(o.created_at).toLocaleString()}</p>
+                          <p className="text-[10px] text-noir-dim mt-1 font-mono">Date: {new Date(o.created_at).toLocaleString()}</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-xs font-extrabold text-gray-800">₹{o.total_payable}</p>
-                          <p className="text-[9px] text-gray-400 font-mono mt-0.5">Table {o.table_number}</p>
+                          <p className="text-xs font-bold text-noir-gold">₹{o.total_payable}</p>
+                          <p className="text-[9px] text-noir-dim font-mono mt-0.5">Table {o.table_number}</p>
                         </div>
                       </div>
 
                       {/* Items list */}
                       <div className="space-y-1">
                         {o.items.map(item => (
-                          <div key={item.id} className="flex justify-between text-xs text-gray-600">
-                            <span>x{item.quantity} {item.name} <span className="text-[10px] text-gray-400">({item.category})</span></span>
-                            <span className="font-mono">₹{Number(item.unit_price_snapshot) * item.quantity}</span>
+                          <div key={item.id} className="flex justify-between text-xs text-noir-text">
+                            <span>x{item.quantity} {item.name} <span className="text-[10px] text-noir-dim">({item.category})</span></span>
+                            <span className="font-mono text-noir-gold">₹{Number(item.unit_price_snapshot) * item.quantity}</span>
                           </div>
                         ))}
                       </div>
 
                       {/* Status history tracking */}
-                      <div className="pt-2 border-t text-[10px] text-gray-400 font-mono flex flex-wrap gap-x-4 gap-y-1">
+                      <div className="pt-2 border-t border-noir-border text-[10px] text-noir-dim font-mono flex flex-wrap gap-x-4 gap-y-1">
                         <p>Confirmed: {new Date(o.created_at).toLocaleTimeString()}</p>
                         {o.cooking_started_at && <p>Cooking Started: {new Date(o.cooking_started_at).toLocaleTimeString()}</p>}
                         {o.ready_at && <p>Ready: {new Date(o.ready_at).toLocaleTimeString()}</p>}
-                        {o.delivered_at && <p className="text-emerald-600 font-bold">Served: {new Date(o.delivered_at).toLocaleTimeString()}</p>}
-                        {o.cancelled_at && <p className="text-red-600 font-bold">Cancelled: {new Date(o.cancelled_at).toLocaleTimeString()}</p>}
+                        {o.delivered_at && <p className="text-emerald-400 font-bold">Served: {new Date(o.delivered_at).toLocaleTimeString()}</p>}
+                        {o.cancelled_at && <p className="text-red-400 font-bold">Cancelled: {new Date(o.cancelled_at).toLocaleTimeString()}</p>}
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-center py-6 text-xs text-gray-400 italic">No past transactions registered for your profile.</p>
+                <p className="text-center py-6 text-xs text-noir-dim italic">No past transactions registered for your profile.</p>
               )}
             </div>
           )}

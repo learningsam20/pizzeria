@@ -155,36 +155,36 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-gray-800" id="main-app-viewport">
+    <div className="min-h-screen bg-noir-bg flex flex-col font-sans text-noir-text" id="main-app-viewport">
       
       {/* 1. Global Navigation Hub Bar */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-xs" id="navigation-hub">
+      <header className="bg-noir-panel border-b border-noir-border sticky top-0 z-40 shadow-md" id="navigation-hub">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-3">
           
           {/* Brand Logo Display */}
           <div className="flex items-center space-x-3.5 cursor-pointer" onClick={() => setActiveRole('customer')}>
-            <div className="w-10 h-10 bg-gradient-to-tr from-red-600 to-amber-500 rounded-xl flex items-center justify-center text-white shadow-md shadow-red-500/20 transform hover:scale-105 transition-all">
-              <Pizza className="w-6 h-6 rotate-12" />
+            <div className="w-9 h-9 bg-noir-gold rounded-sm rotate-45 flex items-center justify-center text-black shadow-lg transform hover:scale-105 transition-all">
+              <Pizza className="w-5 h-5 -rotate-45" />
             </div>
             <div>
-              <h1 className="font-extrabold text-lg text-gray-900 tracking-tight leading-none font-sans flex items-center gap-1">
-                Slice of Heaven <span className="text-red-600 text-xs font-mono uppercase bg-red-50 px-1.5 py-0.5 rounded-md border border-red-100">Pizzeria</span>
+              <h1 className="font-serif text-lg font-bold tracking-tight text-noir-text leading-none flex items-center gap-1.5">
+                Slice of Heaven <span className="text-noir-gold text-[10px] font-mono uppercase bg-noir-highlight px-1.5 py-0.5 rounded border border-noir-gold-o20">Pizzeria Noir</span>
               </h1>
-              <p className="text-[10px] text-gray-400 mt-1 font-mono uppercase tracking-widest">Postgres & AI Ordering System</p>
+              <p className="text-[9px] text-noir-dim mt-1 font-mono uppercase tracking-widest">Postgres & AI Intelligence</p>
             </div>
           </div>
 
           {/* TESTING SANDBOX PANEL: Role switcher */}
-          <div className="flex items-center bg-gray-100 p-1 rounded-2xl border border-gray-200/60 text-xs font-medium max-w-full overflow-x-auto scrollbar-none">
+          <div className="flex items-center bg-noir-sidebar p-1 rounded-xl border border-noir-border text-xs font-medium max-w-full overflow-x-auto scrollbar-none">
             <button
               onClick={() => setActiveRole('customer')}
-              className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 activeRole === 'customer' 
-                  ? 'bg-white text-red-600 shadow-sm font-bold' 
-                  : 'text-gray-600 hover:text-gray-800'
+                  ? 'bg-noir-highlight text-noir-gold border border-noir-gold-o20 font-semibold' 
+                  : 'text-noir-muted hover:text-noir-text hover:bg-noir-highlight/40'
               }`}
             >
-              <Pizza className="w-4 h-4" /> Dine-In Customer
+              <Pizza className="w-3.5 h-3.5" /> Dine-In Customer
             </button>
             
             <button
@@ -195,13 +195,13 @@ export default function App() {
                   setActiveRole('staff');
                 }
               }}
-              className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 activeRole === 'staff' 
-                  ? 'bg-white text-amber-600 shadow-sm font-bold' 
-                  : 'text-gray-600 hover:text-gray-800'
+                  ? 'bg-noir-highlight text-noir-gold border border-noir-gold-o20 font-semibold' 
+                  : 'text-noir-muted hover:text-noir-text hover:bg-noir-highlight/40'
               }`}
             >
-              <ChefHat className="w-4 h-4" /> Staff Kitchen
+              <ChefHat className="w-3.5 h-3.5" /> Staff Kitchen
             </button>
 
             <button
@@ -212,36 +212,36 @@ export default function App() {
                   setActiveRole('admin');
                 }
               }}
-              className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 activeRole === 'admin' 
-                  ? 'bg-white text-purple-600 shadow-sm font-bold' 
-                  : 'text-gray-600 hover:text-gray-800'
+                  ? 'bg-noir-highlight text-noir-gold border border-noir-gold-o20 font-semibold' 
+                  : 'text-noir-muted hover:text-noir-text hover:bg-noir-highlight/40'
               }`}
             >
-              <ShieldCheck className="w-4 h-4" /> Admin Analytics
+              <ShieldCheck className="w-3.5 h-3.5" /> Admin Analytics
             </button>
 
             <button
               onClick={() => setActiveRole('chatbot')}
-              className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 activeRole === 'chatbot' 
-                  ? 'bg-white text-blue-600 shadow-sm font-bold' 
-                  : 'text-gray-600 hover:text-gray-800'
+                  ? 'bg-noir-highlight text-noir-gold border border-noir-gold-o20 font-semibold' 
+                  : 'text-noir-muted hover:text-noir-text hover:bg-noir-highlight/40'
               }`}
             >
-              <Bot className="w-4 h-4" /> Support Chat
+              <Bot className="w-3.5 h-3.5" /> Support Chat
             </button>
 
             <button
               onClick={() => setActiveRole('config')}
-              className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 activeRole === 'config' 
-                  ? 'bg-white text-gray-800 shadow-sm font-bold' 
-                  : 'text-gray-500 hover:text-gray-700'
+                  ? 'bg-noir-highlight text-noir-gold border border-noir-gold-o20 font-semibold' 
+                  : 'text-noir-muted hover:text-noir-text hover:bg-noir-highlight/40'
               }`}
               title="View Environment Variables, database link diagnostic logs, and copy Supabase SQL tables structure"
             >
-              <Database className="w-4 h-4" /> Setup
+              <Database className="w-3.5 h-3.5" /> Setup
             </button>
           </div>
 
@@ -249,25 +249,25 @@ export default function App() {
           <div className="flex items-center space-x-3 text-xs">
             <button
               onClick={fetchActiveData}
-              className="p-2 bg-gray-50 hover:bg-gray-100 rounded-xl text-gray-500 hover:text-gray-700 border border-gray-200 cursor-pointer"
+              className="p-2 bg-noir-highlight hover:bg-noir-sidebar rounded-lg text-noir-muted hover:text-noir-text border border-noir-border cursor-pointer transition-colors"
               title="Sync tables"
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className="w-3.5 h-3.5" />
             </button>
 
             {staffSession ? (
-              <div className="bg-gray-900 text-white pl-3.5 pr-2 py-1 rounded-xl flex items-center space-x-2 border border-gray-800">
+              <div className="bg-noir-sidebar text-noir-text pl-3.5 pr-2 py-1 rounded-lg flex items-center space-x-2 border border-noir-border">
                 <span className="font-semibold text-[11px] max-w-[80px] truncate">{staffSession.name}</span>
                 <button
                   onClick={handleStaffLogout}
-                  className="p-1 bg-white/10 hover:bg-white/20 rounded-lg text-red-400 cursor-pointer"
+                  className="p-1 bg-noir-highlight hover:bg-noir-sidebar text-red-400 rounded-md cursor-pointer transition-colors"
                   title="Logout Session"
                 >
-                  <LogOut className="w-3.5 h-3.5" />
+                  <LogOut className="w-3 h-3" />
                 </button>
               </div>
             ) : (
-              <div className="text-gray-400 font-mono text-[10px] hidden md:block">
+              <div className="text-noir-dim font-mono text-[10px] hidden md:block">
                 Dine-in Tables Active
               </div>
             )}
@@ -279,9 +279,9 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 min-h-0">
         
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-24 text-gray-400 space-y-3.5">
-            <RefreshCw className="w-10 h-10 text-red-500 animate-spin" />
-            <p className="text-xs font-mono">Initializing connection systems...</p>
+          <div className="flex flex-col items-center justify-center py-24 text-noir-dim space-y-3.5">
+            <RefreshCw className="w-10 h-10 text-noir-gold animate-spin" />
+            <p className="text-xs font-mono tracking-widest uppercase">Initializing connection systems...</p>
           </div>
         ) : (
           <div className="space-y-6">
@@ -291,14 +291,14 @@ export default function App() {
               <div className="space-y-4">
                 {/* Check if staff logged in check: "The customers should be able to start a new transaction after the staff has logged in." */}
                 {!staffSession && (
-                  <div className="p-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl text-xs space-y-2 flex items-start gap-3">
-                    <ShieldAlert className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                  <div className="p-4 bg-noir-card border border-noir-border rounded-2xl text-xs space-y-2 flex items-start gap-3">
+                    <ShieldAlert className="w-5 h-5 text-noir-gold flex-shrink-0 mt-0.5" />
                     <div>
-                      <p className="font-bold">Staff Supervision Mode Active</p>
-                      <p className="leading-snug">To place pizza orders, a staff member must first log in using the Shift Login panel on the right or via the "Staff Kitchen" tab in the header. Once authorized, client ordering transaction modules are unlocked.</p>
+                      <p className="font-serif italic text-sm text-noir-gold">Staff Supervision Mode Active</p>
+                      <p className="leading-snug text-noir-muted mt-1">To place pizza orders, a staff member must first log in using the Shift Login panel on the right or via the "Staff Kitchen" tab in the header. Once authorized, client ordering transaction modules are unlocked.</p>
                       <button
                         onClick={() => setActiveRole('staff')}
-                        className="mt-2 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-[10px]"
+                        className="mt-3 px-3 py-1.5 bg-noir-gold hover:bg-noir-gold-hover text-black font-semibold rounded text-[10px] transition-colors"
                       >
                         Bypass & Sign In as Staff
                       </button>
@@ -327,30 +327,30 @@ export default function App() {
                   />
                 ) : (
                   /* Render staff login screen */
-                  <div className="max-w-md mx-auto bg-white border rounded-2xl p-6 shadow-md space-y-4">
-                    <div className="text-center pb-2 border-b">
-                      <ChefHat className="w-10 h-10 text-amber-500 mx-auto" />
-                      <h3 className="text-lg font-bold text-gray-800 mt-2">Staff Shift Login</h3>
-                      <p className="text-xs text-gray-500 mt-0.5">Authorize your device to process kitchen pizzas and print table QRs.</p>
+                  <div className="max-w-md mx-auto bg-noir-card border border-noir-border rounded-2xl p-6 shadow-xl space-y-4">
+                    <div className="text-center pb-3 border-b border-noir-border">
+                      <ChefHat className="w-10 h-10 text-noir-gold mx-auto" />
+                      <h3 className="text-lg font-serif italic text-noir-text mt-2">Staff Shift Login</h3>
+                      <p className="text-xs text-noir-muted mt-1">Authorize your device to process kitchen pizzas and print table QRs.</p>
                     </div>
 
-                    <form onSubmit={handleStaffLogin} className="space-y-3">
+                    <form onSubmit={handleStaffLogin} className="space-y-4">
                       <div className="space-y-1 text-xs">
-                        <label className="block font-bold text-gray-500 uppercase text-[9px]">Pizzeria Staff Email *</label>
+                        <label className="block font-semibold text-noir-dim uppercase text-[9px] tracking-wider">Pizzeria Staff Email *</label>
                         <input
                           type="email"
                           required
                           placeholder="e.g. staff1@pizzeria.com or write 'admin@pizzeria.com' for admin demo"
                           value={staffLoginEmail}
                           onChange={(e) => setStaffLoginEmail(e.target.value)}
-                          className="w-full px-3 py-2 border rounded-xl"
+                          className="w-full px-3 py-2 bg-noir-panel border border-noir-border focus:border-noir-gold outline-none rounded-xl text-noir-text transition-all"
                         />
-                        <p className="text-[10px] text-gray-400">Tip: Write "admin@pizzeria.com" or "staff1@pizzeria.com" for instant automatic bypass sign-in.</p>
+                        <p className="text-[10px] text-noir-dim mt-1">Tip: Write "admin@pizzeria.com" or "staff1@pizzeria.com" for instant automatic bypass sign-in.</p>
                       </div>
 
                       <button
                         type="submit"
-                        className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl transition-all cursor-pointer shadow-sm"
+                        className="w-full py-2.5 bg-noir-gold hover:bg-noir-gold-hover text-black font-semibold text-xs rounded-xl transition-all cursor-pointer shadow-md"
                       >
                         Start shift & Log In
                       </button>
@@ -373,29 +373,29 @@ export default function App() {
                   />
                 ) : (
                   /* Render admin login/bypass alert */
-                  <div className="max-w-md mx-auto bg-white border rounded-2xl p-6 shadow-md space-y-4">
-                    <div className="text-center pb-2 border-b">
-                      <ShieldCheck className="w-10 h-10 text-purple-600 mx-auto" />
-                      <h3 className="text-lg font-bold text-gray-800 mt-2">Executive Access Required</h3>
-                      <p className="text-xs text-gray-500 mt-0.5">Secure dashboard contains analytical charts and financial reports.</p>
+                  <div className="max-w-md mx-auto bg-noir-card border border-noir-border rounded-2xl p-6 shadow-xl space-y-4">
+                    <div className="text-center pb-3 border-b border-noir-border">
+                      <ShieldCheck className="w-10 h-10 text-noir-gold mx-auto" />
+                      <h3 className="text-lg font-serif italic text-noir-text mt-2">Executive Access Required</h3>
+                      <p className="text-xs text-noir-muted mt-1">Secure dashboard contains analytical charts and financial reports.</p>
                     </div>
 
-                    <form onSubmit={handleStaffLogin} className="space-y-3">
+                    <form onSubmit={handleStaffLogin} className="space-y-4">
                       <div className="space-y-1 text-xs">
-                        <label className="block font-bold text-gray-500 uppercase text-[9px]">Admin Email *</label>
+                        <label className="block font-semibold text-noir-dim uppercase text-[9px] tracking-wider">Admin Email *</label>
                         <input
                           type="email"
                           required
                           placeholder="Write 'admin@pizzeria.com' to bypass"
                           value={staffLoginEmail}
                           onChange={(e) => setStaffLoginEmail(e.target.value)}
-                          className="w-full px-3 py-2 border rounded-xl"
+                          className="w-full px-3 py-2 bg-noir-panel border border-noir-border focus:border-noir-gold outline-none rounded-xl text-noir-text transition-all"
                         />
                       </div>
 
                       <button
                         type="submit"
-                        className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl transition-all cursor-pointer shadow-sm"
+                        className="w-full py-2.5 bg-noir-gold hover:bg-noir-gold-hover text-black font-semibold text-xs rounded-xl transition-all cursor-pointer shadow-md"
                       >
                         Unlock Executive Dashboard
                       </button>
@@ -430,10 +430,10 @@ export default function App() {
       </main>
 
       {/* 3. Global footer */}
-      <footer className="bg-white border-t border-gray-200 py-6 mt-12 text-center" id="global-footer">
-        <div className="max-w-7xl mx-auto px-4 text-xs text-gray-400 space-y-1.5 font-mono">
+      <footer className="bg-black border-t border-noir-border py-6 mt-12 text-center" id="global-footer">
+        <div className="max-w-7xl mx-auto px-4 text-xs text-noir-dim space-y-1.5 font-mono">
           <p>© 2026 Slice of Heaven Pizzeria Ltd. All rights reserved.</p>
-          <p>
+          <p className="text-[10px] tracking-wider">
             Connected to: {supabaseConnected ? '⚡ Supabase Postgres Cloud' : '💾 Local Web Storage Engine'}
             {config.hasGemini ? ' • 💬 Gemini AI Engine Online' : ' • ⚠️ Gemini AI Key Offline'}
           </p>
