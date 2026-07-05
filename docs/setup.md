@@ -27,6 +27,40 @@ npm run dev            # Express + Vite on http://localhost:3000
 
 ---
 
+## Deploy on Vercel
+
+This app is **not a static Vite site only** — it has an Express API (`/api/*`). The repo includes `vercel.json` and `api/index.js` so Vercel can run the API as a serverless function while serving the UI from `dist/`.
+
+### Vercel project settings
+
+| Setting | Value |
+|---------|--------|
+| Framework Preset | Vite (or Other) |
+| Build Command | `npm run build` |
+| Output Directory | `dist` |
+| Install Command | `npm install` (default) |
+| Root Directory | `./` |
+
+Do **not** use Development Command `vite` alone for production — the API will 404.
+
+### Environment variables (Vercel → Settings → Environment Variables)
+
+Add the same variables as local `.env` (at minimum `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`). Redeploy after adding secrets.
+
+### How it works
+
+- **`npm run build`** produces `dist/index.html` (UI) and `dist/server.cjs` (Express API).
+- Static files are served from `dist/`.
+- Requests to `/api/*` are rewritten to `api/index.js`, which loads `dist/server.cjs`.
+
+### Limitations on Vercel
+
+- **`output/order_log.txt`** is not durable on serverless (use Supabase as source of truth).
+- Cold starts may delay the first API request after idle.
+- For a always-on Node server, use **Railway**, **Render**, or **Fly.io** with `npm run build && npm start` instead.
+
+---
+
 ## Environment variables
 
 Configure in `.env` or your hosting secrets panel:

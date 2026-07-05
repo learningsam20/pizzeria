@@ -314,7 +314,11 @@ const getLocalData = () => {
 };
 
 // Start server function
-async function startServer() {
+let serverInitialized = false;
+
+async function initializeServer() {
+  if (serverInitialized) return;
+  serverInitialized = true;
   // 1. Endpoints
   
   // Endpoint to return keys securely
@@ -1331,35 +1335,6 @@ ${contextualData}
     res.status(404).json({ error: "API route not found. Restart the dev server (npm run dev) if you recently added routes." });
   });
 
-  const distPath = path.join(process.cwd(), "dist");
-  const distIndex = path.join(distPath, "index.html");
-  // npm run dev must always use Vite — .env may set NODE_ENV=production incorrectly
-  const useVite =
-    process.env.npm_lifecycle_event === "dev" ||
-    (process.env.NODE_ENV !== "production" && !fs.existsSync(distIndex));
-
-  const httpServer = createHttpServer(app);
-
-  if (useVite) {
-    const vite = await createViteServer({
-      configFile: path.join(process.cwd(), "vite.config.ts"),
-      server: {
-        middlewareMode: true,
-        // Route HMR through the same HTTP server (avoids stray ws port 24678 / 404 reloads)
-        hmr: process.env.DISABLE_HMR === "true" ? false : { server: httpServer },
-        watch: process.env.DISABLE_HMR === "true" ? null : undefined,
-      },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    app.use(express.static(distPath));
-    app.get("*", (req, res, next) => {
-      if (req.path.startsWith("/api/")) return next();
-      res.sendFile(distIndex);
-    });
-  }
-
   syncAppHelpToKnowledgeBase();
   ensureOutputDir();
 
@@ -1386,12 +1361,57 @@ ${contextualData}
           }],
     };
   });
+}
+
+async function startServer() {
+  await initializeServer();
+
+  const distPath = path.join(process.cwd(), "dist");
+  const distIndex = path.join(distPath, "index.html");
+  // npm run dev must always use Vite — .env may set NODE_ENV=production incorrectly
+  const useVite =
+    process.env.npm_lifecycle_event === "dev" ||
+    (process.env.NODE_ENV !== "production" && !fs.existsSync(distIndex));
+
+  const httpServer = createHttpServer(app);
+
+  if (useVite) {
+    const vite = await createViteServer({
+      configFile: path.join(process.cwd(), "vite.config.ts"),
+      server: {
+        middlewareMode: true,
+        hmr: process.env.DISABLE_HMR === "true" ? false : { server: httpServer },
+        watch: process.env.DISABLE_HMR === "true" ? null : undefined,
+      },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    app.use(express.static(distPath));
+    app.get("*", (req, res, next) => {
+      if (req.path.startsWith("/api/")) return next();
+      res.sendFile(distIndex);
+    });
+  }
 
   httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
   });
 }
 
-startServer().catch((err) => {
-  console.error("Failed to start server:", err);
-});
+/** Vercel serverless handler — serves /api/* only (static UI comes from dist/). */
+export async function handler(req: any, res: any) {
+  await initializeServer();
+  return new Promise<void>((resolve, reject) => {
+    app(req, res, (err: unknown) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
+if (!process.env.VERCEL) {
+  startServer().catch((err) => {
+    console.error("Failed to start server:", err);
+  });
+}
