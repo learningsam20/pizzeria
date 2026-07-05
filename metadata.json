@@ -1,0 +1,8 @@
+{
+  "name": "Pizza Ordering and Admin Dashboard",
+  "description": "Pizza ordering system with Supabase authentication, staff order management, analytical admin dashboard, and AI chatbot powered by Gemini.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
