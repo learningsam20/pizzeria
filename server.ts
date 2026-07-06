@@ -25,7 +25,8 @@ import {
   calcBillTotals,
   currencySymbol,
 } from "./src/lib/appSettings.ts";
-import type { AppSettings, MenuLoadStatus } from "./src/types.ts";
+import type { AppSettings, MenuLoadStatus, OrderWithItems } from "./src/types.ts";
+import { formatOrderLogBlock, formatOrdersExportDocument } from "./src/lib/orderFormat.ts";
 
 // Load environment variables
 dotenv.config();
@@ -189,10 +190,6 @@ function ensureOutputDir() {
   }
 }
 
-function formatLogInr(value: unknown): string {
-  return Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 function appendOrderLog(
   order: Record<string, unknown>,
   items: Record<string, unknown>[],
@@ -219,50 +216,16 @@ function appendOrderLog(
       fs.writeFileSync(logPath, header, "utf-8");
     }
 
-  const ts = String(order.delivered_at || new Date().toISOString());
-  const dt = new Date(ts);
-  const tsIst = dt.toLocaleString("en-IN", {
-    timeZone: "Asia/Kolkata",
-    weekday: "short",
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+    const orderForFormat = {
+      ...order,
+      table_name: tableName || String(order.table_name || ""),
+      items,
+    } as unknown as OrderWithItems;
 
-  const divider = "─".repeat(80);
-  const itemLines = items.map((item, idx) => {
-    const unit = Number(item.unit_price_snapshot || 0);
-    const qty = Number(item.quantity || 0);
-    const lineTotal = unit * qty;
-    const name = String(item.name || "Item").padEnd(26).slice(0, 26);
-    return `  ${String(idx + 1).padStart(2)}. ${name}  ×${qty}  @ ₹${formatLogInr(unit)}  →  ₹${formatLogInr(lineTotal)}`;
-  });
-
-  const block = [
-    divider,
-    ` ORDER #${order.id}  ·  PAID / DELIVERED  ·  ${tsIst} IST`,
-    divider,
-    ` Customer     ${order.customer_name}`,
-    ` Phone        ${order.customer_phone}`,
-    tableName ? ` Table        ${tableName}` : null,
-    ` Payment      ${order.payment_mode}`,
-    ` Currency     ${order.currency || "INR"}`,
-    "",
-    " Line items",
-    ...(itemLines.length > 0 ? itemLines : ["  (no line items recorded)"]),
-    "",
-    " Bill summary",
-    `   Subtotal .............. ₹${formatLogInr(order.subtotal)}`,
-    `   Bulk discount ......... ₹${formatLogInr(order.discount)}`,
-    `   GST ................... ₹${formatLogInr(order.gst)}`,
-    `   TOTAL PAYABLE ......... ₹${formatLogInr(order.total_payable)}`,
-    divider,
-    "",
-  ]
-    .filter((line) => line !== null)
-    .join("\n");
+    const block = formatOrderLogBlock(orderForFormat, {
+      statusLabel: "PAID / DELIVERED",
+      timestamp: String(order.delivered_at || new Date().toISOString()),
+    });
 
     fs.appendFileSync(logPath, block, "utf-8");
   } catch (err) {
@@ -1270,21 +1233,45 @@ ${contextualData}
   });
 
   // Orders
+  async function fetchAllOrdersWithItems(): Promise<OrderWithItems[]> {
+    const sb = getSupabaseDataClient();
+    const { data: orders, error: ordersErr } = await sb
+      .from("orders").select("*, table_info(table_name)").order("id", { ascending: false });
+    if (ordersErr) throw ordersErr;
+    const { data: items, error: itemsErr } = await sb.from("order_items").select("*");
+    if (itemsErr) throw itemsErr;
+    return (orders || []).map((o: any) => {
+      const table_name = resolveTableName(o);
+      const { table_info: _ti, ...fields } = o;
+      return { ...fields, table_name, items: (items || []).filter((i: any) => i.order_id === o.id) };
+    });
+  }
+
   app.get("/api/orders", async (_req, res) => {
     try {
-      const sb = getSupabaseDataClient();
-      const { data: orders, error: ordersErr } = await sb
-        .from("orders").select("*, table_info(table_name)").order("id", { ascending: false });
-      if (ordersErr) throw ordersErr;
-      const { data: items, error: itemsErr } = await sb.from("order_items").select("*");
-      if (itemsErr) throw itemsErr;
-      const result = (orders || []).map((o: any) => {
-        const table_name = resolveTableName(o);
-        const { table_info: _ti, ...fields } = o;
-        return { ...fields, table_name, items: (items || []).filter((i: any) => i.order_id === o.id) };
-      });
-      res.json(result);
+      res.json(await fetchAllOrdersWithItems());
     } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.get("/api/admin/orders/export", async (req, res) => {
+    try {
+      const staffId = String(req.query.staffId || "");
+      await assertAdminProfile(staffId);
+      const statusFilter = String(req.query.status || "").trim().toLowerCase();
+      let orders = await fetchAllOrdersWithItems();
+      if (statusFilter && statusFilter !== "all") {
+        orders = orders.filter((o) => o.status === statusFilter);
+      }
+      const text = formatOrdersExportDocument(
+        orders,
+        statusFilter && statusFilter !== "all" ? `ORDERS EXPORT (${statusFilter.toUpperCase()})` : "ALL ORDERS EXPORT"
+      );
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="orders_export_${Date.now()}.txt"`);
+      res.send(text);
+    } catch (e: any) {
+      res.status(e.message === "Admin access required." ? 403 : 500).json({ error: e.message });
+    }
   });
 
   app.get("/api/orders/:id", async (req, res) => {

@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
   MessageSquare, Send, Bot, User, RefreshCw, Upload, FileText,
-  Mic, MicOff, ShoppingBag, Volume2, VolumeX, Pizza
+  Mic, Square, ShoppingBag, Volume2, VolumeX, Pizza
 } from 'lucide-react';
 import { MenuItem, OrderWithItems, AppSettings, DineInTable } from '../types';
 import {
@@ -244,14 +244,15 @@ export default function Chatbot({
     });
 
   const toggleMic = () => {
-    void (isListening ? stopListening() : startListening());
+    if (isListening) stopListening();
+    else startListening();
   };
 
-  const speechHint = isSpeechRecognitionSupported()
-    ? isListening
-      ? 'Stop listening'
-      : 'Tap and speak — text goes to the assistant'
-    : 'Speech-to-text needs Chrome or Edge (open app in a normal browser window)';
+  const speechHint = isListening
+    ? 'Stop recording'
+    : isSpeechRecognitionSupported()
+      ? 'Start voice input (browser speech-to-text)'
+      : 'Voice input needs Chrome or Edge in a normal browser window';
 
   const fetchKbStatus = async () => {
     try {
@@ -315,8 +316,9 @@ export default function Chatbot({
   };
 
   const handleSendMessage = async (textToSend?: string) => {
-    const text = textToSend || input;
-    if (!text.trim()) return;
+    const text = (textToSend ?? input).trim();
+    if (!text) return;
+    if (loading && !textToSend) return;
 
     if (!textToSend) setInput('');
     setMessages(prev => [...prev, { role: 'user', content: text }]);
@@ -542,7 +544,7 @@ export default function Chatbot({
                   className={`p-2.5 rounded-xl border transition-colors cursor-pointer disabled:opacity-40 ${isListening ? 'bg-red-900/40 border-red-700 text-red-300 animate-pulse' : 'bg-noir-panel border-noir-border text-noir-gold hover:bg-noir-highlight'}`}
                   id="voice-mic-btn"
                 >
-                  {isListening ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+                  {isListening ? <Square className="w-5 h-5 fill-current" /> : <Mic className="w-5 h-5" />}
                 </button>
                 <input
                   type="text"
@@ -712,7 +714,7 @@ export default function Chatbot({
               className={`p-2.5 rounded-xl border transition-colors cursor-pointer disabled:opacity-40 ${isListening ? 'bg-red-900/40 border-red-700 text-red-300 animate-pulse' : 'bg-noir-panel border-noir-border text-noir-gold hover:bg-noir-highlight'}`}
               id="support-mic-btn"
             >
-              {isListening ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+              {isListening ? <Square className="w-5 h-5 fill-current" /> : <Mic className="w-5 h-5" />}
             </button>
             <input
               type="text"

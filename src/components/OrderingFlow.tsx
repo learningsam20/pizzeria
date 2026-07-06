@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Pizza, Plus, Minus, ShoppingBag, History, AlertCircle, CheckCircle2,
   RefreshCw, Smartphone, Trash2, PackagePlus
@@ -17,11 +17,13 @@ import {
   validateNonEmpty,
 } from '../lib/inputValidation';
 import BillSummary from './BillSummary';
+import OrderCombosDisplay from './OrderCombosDisplay';
 
 interface OrderingFlowProps {
   menuItems: MenuItem[];
   appSettings: AppSettings;
   onOrderPlaced: () => void;
+  onGoToQueue?: () => void;
   staffLoggedIn: boolean;
   lockedTable: DineInTable | null;
   scannedTableQr: number | null;
@@ -49,7 +51,7 @@ function comboPizzaCount(combo: ComboEntry): number {
   return Object.values(combo.pizzas).reduce((s, q) => s + q, 0);
 }
 
-export default function OrderingFlow({ menuItems, appSettings, onOrderPlaced, staffLoggedIn, lockedTable, scannedTableQr, activeTableOrders, allTables, availableTables }: OrderingFlowProps) {
+export default function OrderingFlow({ menuItems, appSettings, onOrderPlaced, onGoToQueue, staffLoggedIn, lockedTable, scannedTableQr, activeTableOrders, allTables, availableTables }: OrderingFlowProps) {
   const [sessionStartedAt] = useState<string>(new Date().toISOString());
   const [activeTab, setActiveTab] = useState<'order' | 'history'>('order');
 
@@ -85,7 +87,8 @@ export default function OrderingFlow({ menuItems, appSettings, onOrderPlaced, st
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  const [submitMsg, setSubmitMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [submitMsg, setSubmitMsg] = useState<{ type: 'success' | 'error'; text: string; orderId?: number } | null>(null);
+  const cartSectionRef = useRef<HTMLDivElement>(null);
 
   const resetCustomerFields = () => {
     setCustomerLookupInput('');
@@ -252,6 +255,10 @@ export default function OrderingFlow({ menuItems, appSettings, onOrderPlaced, st
       setCombos(prev => [...prev, entry]);
     }
     resetDraft();
+    requestAnimationFrame(() => {
+      cartSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
   };
 
   const numberedPizzas = activePizzas.map((p, i) => ({ ...p, menuNumber: i + 1 }));
@@ -361,7 +368,7 @@ export default function OrderingFlow({ menuItems, appSettings, onOrderPlaced, st
     const trimmedEmail = customerEmail;
     const nameCheck = validateCustomerName(trimmedName);
     const phoneCheck = validatePhone(trimmedPhone);
-    const emailCheck = validateEmail(trimmedEmail, { required: true });
+    const emailCheck = validateEmail(trimmedEmail);
     const errors: { name?: string; phone?: string; email?: string } = {};
 
     if (!nameCheck.ok) errors.name = nameCheck.error;
@@ -434,7 +441,11 @@ export default function OrderingFlow({ menuItems, appSettings, onOrderPlaced, st
         session_started_at: sessionStartedAt,
       }, itemsToSubmit);
 
-      setSubmitMsg({ type: 'success', text: `🎉 Order #${placedOrder.id} placed for ${tableName}. Save this ID to track your order in Order History.` });
+      setSubmitMsg({
+        type: 'success',
+        text: `Order #${placedOrder.id} placed for ${tableName}.`,
+        orderId: placedOrder.id,
+      });
       setCombos([]);
       resetCustomerFields();
       resetDraft();
@@ -699,7 +710,7 @@ export default function OrderingFlow({ menuItems, appSettings, onOrderPlaced, st
           </div>
 
           {/* RIGHT — order cart & checkout */}
-          <div className="space-y-5">
+          <div className="space-y-5" ref={cartSectionRef}>
             <form onSubmit={handleCheckout} className="bg-noir-card p-5 rounded-2xl border border-noir-border shadow-lg space-y-4">
               <div className="flex items-center space-x-2 border-b border-noir-border pb-3">
                 <ShoppingBag className="w-5 h-5 text-noir-gold" />
@@ -831,10 +842,9 @@ export default function OrderingFlow({ menuItems, appSettings, onOrderPlaced, st
                   {fieldErrors.phone && <p className="text-[10px] text-red-400">{fieldErrors.phone}</p>}
                 </div>
                 <div className="space-y-1">
-                  <label className="block font-semibold text-noir-dim uppercase text-[9px] tracking-wider">Email *</label>
+                  <label className="block font-semibold text-noir-dim uppercase text-[9px] tracking-wider">Email (optional)</label>
                   <input
                     type="email"
-                    required
                     placeholder="e.g. rahul@example.com"
                     value={customerEmail}
                     onChange={e => { setCustomerEmail(e.target.value); setFieldErrors(p => ({ ...p, email: undefined })); }}
@@ -857,10 +867,37 @@ export default function OrderingFlow({ menuItems, appSettings, onOrderPlaced, st
               {submitMsg && (
                 <div
                   id="submit-status-msg"
-                  className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 border ${submitMsg.type === 'success' ? 'bg-noir-panel border-emerald-500/20 text-emerald-400' : 'bg-noir-panel border-red-500/20 text-red-400'}`}
+                  role={submitMsg.type === 'success' && submitMsg.orderId && staffLoggedIn && onGoToQueue ? 'button' : undefined}
+                  tabIndex={submitMsg.type === 'success' && submitMsg.orderId && staffLoggedIn && onGoToQueue ? 0 : undefined}
+                  onClick={() => {
+                    if (submitMsg.type === 'success' && submitMsg.orderId && staffLoggedIn && onGoToQueue) {
+                      onGoToQueue();
+                    }
+                  }}
+                  onKeyDown={e => {
+                    if ((e.key === 'Enter' || e.key === ' ') && submitMsg.type === 'success' && submitMsg.orderId && staffLoggedIn && onGoToQueue) {
+                      e.preventDefault();
+                      onGoToQueue();
+                    }
+                  }}
+                  className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 border ${submitMsg.type === 'success' ? 'bg-noir-panel border-emerald-500/20 text-emerald-400' : 'bg-noir-panel border-red-500/20 text-red-400'} ${submitMsg.type === 'success' && submitMsg.orderId && staffLoggedIn && onGoToQueue ? 'cursor-pointer hover:border-emerald-500/40' : ''}`}
                 >
                   {submitMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
-                  <span className="flex-1">{submitMsg.text}</span>
+                  <span className="flex-1">
+                    {submitMsg.text}
+                    {submitMsg.type === 'success' && submitMsg.orderId && staffLoggedIn && onGoToQueue && (
+                      <span className="block text-[10px] text-emerald-300/80 mt-0.5 font-normal">Tap to open Kitchen Queue</span>
+                    )}
+                  </span>
+                  {submitMsg.type === 'success' && submitMsg.orderId && staffLoggedIn && onGoToQueue && (
+                    <button
+                      type="button"
+                      onClick={onGoToQueue}
+                      className="shrink-0 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-semibold cursor-pointer"
+                    >
+                      View queue
+                    </button>
+                  )}
                   <button type="button" onClick={() => setSubmitMsg(null)} className="text-noir-dim hover:text-noir-text px-1">×</button>
                 </div>
               )}
@@ -954,14 +991,7 @@ export default function OrderingFlow({ menuItems, appSettings, onOrderPlaced, st
                           <p className="text-[9px] text-noir-dim font-mono mt-0.5">{o.table_name}</p>
                         </div>
                       </div>
-                      <div className="space-y-1">
-                        {o.items.map(item => (
-                          <div key={item.id} className="flex justify-between text-xs text-noir-text">
-                            <span>×{item.quantity} {item.name} <span className="text-[10px] text-noir-dim">({item.category})</span></span>
-                            <span className="font-mono text-noir-gold">₹{Number(item.unit_price_snapshot) * item.quantity}</span>
-                          </div>
-                        ))}
-                      </div>
+                      <OrderCombosDisplay items={o.items} />
                       <div className="pt-2 border-t border-noir-border text-[10px] text-noir-dim font-mono flex flex-wrap gap-x-4 gap-y-1">
                         <p>Placed: {new Date(o.created_at).toLocaleTimeString()}</p>
                         {o.cooking_started_at && <p>Cooking: {new Date(o.cooking_started_at).toLocaleTimeString()}</p>}

@@ -586,7 +586,8 @@ export default function App() {
                 <OrderingFlow 
                   menuItems={menuItems} 
                   appSettings={appSettings}
-                  onOrderPlaced={refreshOrdersAndTables} 
+                  onOrderPlaced={refreshOrdersAndTables}
+                  onGoToQueue={() => setActiveRole('staff')}
                   staffLoggedIn={!!staffSession}
                   lockedTable={lockedTable}
                   scannedTableQr={scannedTableQr}

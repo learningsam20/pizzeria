@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   TrendingUp, Users, Pizza, BarChart3, PieChart as PieIcon, Layers, Trash2, 
-  PlusCircle, Upload, ChevronLeft, ChevronRight, FileSpreadsheet, Sparkles, CheckCircle2, AlertTriangle, Play, SlidersHorizontal, RefreshCw
+  PlusCircle, Upload, ChevronLeft, ChevronRight, FileSpreadsheet, Sparkles, CheckCircle2, AlertTriangle, Play, SlidersHorizontal, RefreshCw, Download, ClipboardList, Lightbulb
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
@@ -13,6 +13,9 @@ import {
 import { MenuItem, Profile, Customer, OrderWithItems, OrderItem, DineInTable, AppSettings, MenuLoadStatus } from '../types';
 import { parseMenuFileRow, validatePhone, validateEmail } from '../lib/inputValidation';
 import { dbService } from '../lib/dbService';
+import { buildAdminRecommendations } from '../lib/adminRecommendations';
+import { filterOrdersForSearch, formatOrdersExportDocument } from '../lib/orderFormat';
+import OrderCombosDisplay from './OrderCombosDisplay';
 
 interface AdminDashboardProps {
   orders: OrderWithItems[];
@@ -39,8 +42,13 @@ export default function AdminDashboard({
   onRefresh,
   currentStaffId,
 }: AdminDashboardProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'analytics' | 'users' | 'customers' | 'menu' | 'settings'>('analytics');
+  const [activeSubTab, setActiveSubTab] = useState<'analytics' | 'orders' | 'recommendations' | 'users' | 'customers' | 'menu' | 'settings'>('analytics');
   
+  // Orders tab
+  const [ordersSearch, setOrdersSearch] = useState('');
+  const [ordersStatusFilter, setOrdersStatusFilter] = useState<'all' | OrderWithItems['status']>('all');
+  const [ordersExporting, setOrdersExporting] = useState(false);
+  const [recommendationCustomers, setRecommendationCustomers] = useState<Customer[]>([]);
   // Pagination & Search States
   const [custPage, setCustPage] = useState(1);
   const [custSearch, setCustSearch] = useState('');
@@ -112,6 +120,15 @@ export default function AdminDashboard({
   }, []);
 
   useEffect(() => {
+    if (activeSubTab !== 'recommendations') return;
+    let cancelled = false;
+    dbService.getCustomers(1, 500, '')
+      .then(data => { if (!cancelled) setRecommendationCustomers(data.data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [activeSubTab, orders]);
+
+  useEffect(() => {
     if (activeSubTab !== 'analytics') return;
 
     let cancelled = false;
@@ -179,6 +196,50 @@ export default function AdminDashboard({
   const occupiedSeats = tables.filter(t => t.is_in_use).reduce((sum, t) => sum + t.capacity, 0);
 
   const analytics = dbService.calculateAnalytics(orders, profiles);
+
+  const filteredAdminOrders = filterOrdersForSearch(
+    ordersStatusFilter === 'all' ? orders : orders.filter(o => o.status === ordersStatusFilter),
+    ordersSearch
+  ).sort((a, b) => b.id - a.id);
+
+  const recommendations = buildAdminRecommendations(orders, tables, recommendationCustomers);
+
+  const downloadTextFile = (filename: string, content: string) => {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportOrdersText = async (scope: 'all' | 'filtered') => {
+    setOrdersExporting(true);
+    try {
+      const subset = scope === 'filtered' ? filteredAdminOrders : orders;
+      if (currentStaffId && dbService.isSupabaseConnected()) {
+        const params = new URLSearchParams({ staffId: currentStaffId });
+        if (scope === 'filtered' && ordersStatusFilter !== 'all') {
+          params.set('status', ordersStatusFilter);
+        }
+        const res = await fetch(`/api/admin/orders/export?${params}`);
+        if (res.ok) {
+          const text = await res.text();
+          downloadTextFile(`orders_export_${Date.now()}.txt`, text);
+          return;
+        }
+      }
+      const title = scope === 'filtered'
+        ? `ORDERS EXPORT (${ordersStatusFilter !== 'all' ? ordersStatusFilter.toUpperCase() : 'FILTERED'})`
+        : 'ALL ORDERS EXPORT';
+      downloadTextFile(`orders_export_${Date.now()}.txt`, formatOrdersExportDocument(subset, title));
+    } catch (err: any) {
+      setStatusMsg({ type: 'error', text: err.message || 'Export failed.' });
+    } finally {
+      setOrdersExporting(false);
+    }
+  };
 
   const resetCustForm = () => {
     setCustName('');
@@ -572,8 +633,8 @@ export default function AdminDashboard({
       </div>
 
       {/* Sub Tabs */}
-      <div className="flex border-b border-noir-border pb-px font-sans">
-        {(['analytics', 'users', 'customers', 'menu', 'settings'] as const).map((tab) => (
+      <div className="flex border-b border-noir-border pb-px font-sans overflow-x-auto">
+        {(['analytics', 'orders', 'recommendations', 'users', 'customers', 'menu', 'settings'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => {
@@ -581,13 +642,23 @@ export default function AdminDashboard({
               setFormType(tab === 'menu' ? 'menu' : tab === 'users' ? 'profile' : 'customer');
               setStatusMsg(null);
             }}
-            className={`px-5 py-3 border-b-2 text-sm font-medium transition-all cursor-pointer ${
+            className={`px-5 py-3 border-b-2 text-sm font-medium transition-all cursor-pointer whitespace-nowrap ${
               activeSubTab === tab 
                 ? 'border-noir-gold text-noir-gold font-semibold bg-noir-highlight/30' 
                 : 'border-transparent text-noir-dim hover:text-noir-text hover:border-noir-border'
             }`}
           >
-            {tab === 'menu' ? 'Pizza & Master Menu' : tab === 'settings' ? 'Store Settings' : tab === 'users' ? 'User Management' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+            {tab === 'menu'
+              ? 'Pizza & Master Menu'
+              : tab === 'settings'
+                ? 'Store Settings'
+                : tab === 'users'
+                  ? 'User Management'
+                  : tab === 'orders'
+                    ? 'Orders'
+                    : tab === 'recommendations'
+                      ? 'Recommendations'
+                      : tab.charAt(0).toUpperCase() + tab.slice(1)}
           </button>
         ))}
       </div>
@@ -1463,6 +1534,175 @@ export default function AdminDashboard({
                   ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {activeSubTab === 'orders' && (
+        <div className="bg-noir-card p-6 rounded-2xl border border-noir-border shadow-lg space-y-5">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-serif italic text-noir-gold flex items-center gap-2">
+                <ClipboardList className="w-5 h-5" /> All Orders
+              </h3>
+              <p className="text-xs text-noir-muted mt-1">
+                Search orders and export formatted text reports (same layout as order_log.txt).
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={ordersExporting}
+                onClick={() => exportOrdersText('filtered')}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border border-noir-border bg-noir-panel text-noir-text hover:border-noir-gold-o20 disabled:opacity-50 cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                Export filtered
+              </button>
+              <button
+                type="button"
+                disabled={ordersExporting}
+                onClick={() => exportOrdersText('all')}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold bg-noir-gold hover:bg-noir-gold-hover text-black disabled:opacity-50 cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                Export all
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3">
+            <input
+              type="search"
+              value={ordersSearch}
+              onChange={e => setOrdersSearch(e.target.value)}
+              placeholder="Search by order ID, customer, table, item…"
+              className="flex-1 px-3 py-2 bg-noir-panel border border-noir-border rounded-xl text-sm text-noir-text focus:border-noir-gold outline-none"
+            />
+            <select
+              value={ordersStatusFilter}
+              onChange={e => setOrdersStatusFilter(e.target.value as typeof ordersStatusFilter)}
+              className="px-3 py-2 bg-noir-panel border border-noir-border rounded-xl text-sm text-noir-text focus:border-noir-gold outline-none"
+            >
+              <option value="all">All statuses</option>
+              <option value="confirmed">Confirmed</option>
+              <option value="preparing">Preparing</option>
+              <option value="ready">Ready</option>
+              <option value="ready_to_bill">Ready to bill</option>
+              <option value="delivered">Delivered</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+
+          <p className="text-xs text-noir-dim font-mono">
+            Showing {filteredAdminOrders.length} of {orders.length} orders
+          </p>
+
+          <div className="overflow-x-auto rounded-xl border border-noir-border">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-noir-panel text-noir-dim uppercase tracking-wider text-[10px]">
+                <tr>
+                  <th className="px-4 py-3">Order</th>
+                  <th className="px-4 py-3">Customer</th>
+                  <th className="px-4 py-3">Table</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Items</th>
+                  <th className="px-4 py-3 text-right">Total</th>
+                  <th className="px-4 py-3">Placed</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-noir-border">
+                {filteredAdminOrders.length ? filteredAdminOrders.map(o => (
+                  <tr key={o.id} className="hover:bg-noir-highlight/30 align-top">
+                    <td className="px-4 py-3 font-mono font-bold text-noir-gold">#{o.id}</td>
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-noir-text">{o.customer_name || 'Guest'}</p>
+                      <p className="text-[10px] text-noir-dim font-mono">{o.customer_phone || '—'}</p>
+                    </td>
+                    <td className="px-4 py-3 text-noir-muted">{o.table_name}</td>
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase border bg-noir-highlight text-noir-muted border-noir-border">
+                        {o.status.replace(/_/g, ' ')}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 min-w-[220px]">
+                      <OrderCombosDisplay items={o.items} compact />
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono font-bold text-noir-gold">₹{Number(o.total_payable).toLocaleString('en-IN')}</td>
+                    <td className="px-4 py-3 text-noir-dim font-mono whitespace-nowrap">{new Date(o.created_at).toLocaleString()}</td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-10 text-center text-noir-dim italic">No orders match your filters.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeSubTab === 'recommendations' && (
+        <div className="space-y-5">
+          <div className="bg-noir-card p-6 rounded-2xl border border-noir-border shadow-lg">
+            <h3 className="text-lg font-serif italic text-noir-gold flex items-center gap-2">
+              <Lightbulb className="w-5 h-5" /> Actionable Insights
+            </h3>
+            <p className="text-xs text-noir-muted mt-1">
+              Recommendations from table occupancy, customer activity, and order patterns.
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+              <div className="rounded-xl border border-noir-border bg-noir-panel p-3">
+                <p className="text-[10px] text-noir-dim uppercase">Tables in use</p>
+                <p className="text-xl font-bold text-noir-gold">{occupiedTables}/{totalTables}</p>
+              </div>
+              <div className="rounded-xl border border-noir-border bg-noir-panel p-3">
+                <p className="text-[10px] text-noir-dim uppercase">Open orders</p>
+                <p className="text-xl font-bold text-noir-text">{orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled').length}</p>
+              </div>
+              <div className="rounded-xl border border-noir-border bg-noir-panel p-3">
+                <p className="text-[10px] text-noir-dim uppercase">Delivered today</p>
+                <p className="text-xl font-bold text-emerald-400">
+                  {orders.filter(o => o.status === 'delivered' && new Date(o.delivered_at || o.created_at).toDateString() === new Date().toDateString()).length}
+                </p>
+              </div>
+              <div className="rounded-xl border border-noir-border bg-noir-panel p-3">
+                <p className="text-[10px] text-noir-dim uppercase">Customers tracked</p>
+                <p className="text-xl font-bold text-noir-text">{recommendationCustomers.length || customersData.totalCount}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {recommendations.map(rec => (
+              <div
+                key={rec.id}
+                className={`rounded-2xl border p-5 space-y-2 ${
+                  rec.priority === 'high'
+                    ? 'border-red-900/40 bg-red-950/20'
+                    : rec.priority === 'medium'
+                      ? 'border-amber-900/40 bg-amber-950/20'
+                      : 'border-noir-border bg-noir-card'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="font-semibold text-noir-text text-sm">{rec.title}</h4>
+                  <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded border ${
+                    rec.priority === 'high'
+                      ? 'text-red-300 border-red-900/40'
+                      : rec.priority === 'medium'
+                        ? 'text-amber-300 border-amber-900/40'
+                        : 'text-noir-dim border-noir-border'
+                  }`}>
+                    {rec.priority}
+                  </span>
+                </div>
+                <p className="text-xs text-noir-muted">{rec.detail}</p>
+                <p className="text-xs text-noir-gold font-medium pt-1 border-t border-noir-border/60">
+                  → {rec.action}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
       )}

@@ -8,6 +8,7 @@ import { dbService } from '../lib/dbService';
 import { orderDisplayStatus, billSummaryLines } from '../lib/orderUtils';
 import { bulkDiscountLabel, gstLabel, DEFAULT_APP_SETTINGS } from '../lib/appSettings';
 import BillSummary from './BillSummary';
+import OrderCombosDisplay from './OrderCombosDisplay';
 
 function isWalkInPhone(phone: string | null | undefined): boolean {
   return !!phone && /^6000000\d{3}$/.test(phone);
@@ -268,7 +269,7 @@ export default function StaffDashboard({ orders, tables, appSettings = DEFAULT_A
                   : 'text-noir-muted hover:text-noir-text'
               }`}
             >
-              Delivered
+              Delivered ({orders.filter(o => o.status === 'delivered').length})
             </button>
             <button
               onClick={() => setStatusFilter('cancelled')}
@@ -278,7 +279,7 @@ export default function StaffDashboard({ orders, tables, appSettings = DEFAULT_A
                   : 'text-noir-muted hover:text-noir-text'
               }`}
             >
-              Cancelled
+              Cancelled ({orders.filter(o => o.status === 'cancelled').length})
             </button>
           </div>
         </div>
@@ -348,17 +349,8 @@ export default function StaffDashboard({ orders, tables, appSettings = DEFAULT_A
                 </div>
 
                 {/* Items snapshot list */}
-                <div className="space-y-1.5 py-1">
-                  {order.items.map(item => (
-                    <div key={item.id} className="flex justify-between text-xs text-noir-text font-sans">
-                      <div className="flex items-center space-x-1.5">
-                        <span className="font-semibold text-noir-gold">x{item.quantity}</span>
-                        <span>{item.name}</span>
-                        <span className="text-[10px] text-noir-dim uppercase tracking-wide">({item.category})</span>
-                      </div>
-                      <span className="font-mono text-noir-muted">₹{Number(item.unit_price_snapshot) * item.quantity}</span>
-                    </div>
-                  ))}
+                <div className="py-1">
+                  <OrderCombosDisplay items={order.items} compact />
                 </div>
 
                 {/* Performance Metrics Tracker Timers */}
