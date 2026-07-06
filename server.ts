@@ -27,6 +27,7 @@ import {
 } from "./src/lib/appSettings.ts";
 import type { AppSettings, MenuLoadStatus, OrderWithItems } from "./src/types.ts";
 import { formatOrderLogBlock, formatOrdersExportDocument } from "./src/lib/orderFormat.ts";
+import { parseAiRecommendations } from "./src/lib/adminRecommendations.ts";
 
 // Load environment variables
 dotenv.config();
@@ -1269,6 +1270,89 @@ ${contextualData}
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
       res.setHeader("Content-Disposition", `attachment; filename="orders_export_${Date.now()}.txt"`);
       res.send(text);
+    } catch (e: any) {
+      res.status(e.message === "Admin access required." ? 403 : 500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/admin/recommendations/ai", async (req, res) => {
+    try {
+      const { staffId, analyticsSnapshot } = req.body || {};
+      await assertAdminProfile(String(staffId || ""));
+
+      if (!process.env.GEMINI_API_KEY) {
+        return res.json({ recommendations: [], aiAvailable: false, message: "Gemini API key not configured." });
+      }
+
+      if (!analyticsSnapshot || typeof analyticsSnapshot !== "object") {
+        return res.status(400).json({ error: "analyticsSnapshot is required." });
+      }
+
+      const ai = createGeminiClient();
+      const snapshotJson = JSON.stringify(analyticsSnapshot, null, 0);
+
+      const systemInstruction = `You are a restaurant operations analyst for Slice of Heaven Pizzeria (India, INR, dine-in pizza).
+Given structured analytics JSON (historic + current orders, tables, staff, cancellations, sales trends), produce 4–8 ADDITIONAL actionable recommendations not obvious from raw numbers alone.
+
+Consider: day-of-week patterns, hour-of-day rushes, table-specific preferences, seasonal context (month/season in snapshot), pizza & topping trends, staff performance gaps, cancellation root causes.
+
+Return ONLY valid JSON (no markdown):
+{
+  "recommendations": [
+    {
+      "id": "ai-unique-id",
+      "category": "temporal"|"table"|"sales"|"staff"|"cancellation"|"operations"|"customer",
+      "priority": "high"|"medium"|"low",
+      "title": "short headline",
+      "detail": "2-3 sentences with specific numbers from the snapshot",
+      "action": "concrete admin action",
+      "rationale": "why this matters — season, behavior, ops theory",
+      "evidence": "data point cited",
+      "impacts": [
+        {
+          "area": "delivery_time"|"satisfaction"|"revenue"|"efficiency",
+          "direction": "improve"|"risk"|"neutral",
+          "magnitude": "high"|"medium"|"low",
+          "summary": "estimated outcome e.g. 10-15% faster delivery or ₹X revenue uplift"
+        }
+      ]
+    }
+  ]
+}
+
+Rules:
+- Every recommendation MUST have 2-3 impacts with quantified estimates where possible.
+- Do NOT repeat generic advice already implied by single metrics; synthesize cross-signals.
+- Use Indian context (IST, ₹, local dining habits).
+- If data is sparse, say so in detail and lower priority.`;
+
+      const response = await ai.models.generateContent({
+        model: CHAT_MODEL,
+        contents: `Analytics snapshot:\n${snapshotJson}\n\nGenerate recommendations JSON:`,
+        config: {
+          systemInstruction,
+          temperature: 0.35,
+        },
+      });
+
+      let parsed: unknown = null;
+      const raw = (response.text || "").trim();
+      try {
+        const cleaned = raw.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+        parsed = JSON.parse(cleaned);
+      } catch {
+        const match = raw.match(/\{[\s\S]*\}/);
+        if (match) {
+          try {
+            parsed = JSON.parse(match[0]);
+          } catch {
+            parsed = null;
+          }
+        }
+      }
+
+      const recommendations = parseAiRecommendations(parsed);
+      res.json({ recommendations, aiAvailable: true });
     } catch (e: any) {
       res.status(e.message === "Admin access required." ? 403 : 500).json({ error: e.message });
     }

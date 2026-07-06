@@ -1,7 +1,7 @@
 // Disable TS checking in this file to avoid missing ambient type errors for dev environment
 // (e.g. "Could not find a declaration file for module 'react'.")
 // @ts-nocheck
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   TrendingUp, Users, Pizza, BarChart3, PieChart as PieIcon, Layers, Trash2, 
   PlusCircle, Upload, ChevronLeft, ChevronRight, FileSpreadsheet, Sparkles, CheckCircle2, AlertTriangle, Play, SlidersHorizontal, RefreshCw, Download, ClipboardList, Lightbulb
@@ -13,7 +13,8 @@ import {
 import { MenuItem, Profile, Customer, OrderWithItems, OrderItem, DineInTable, AppSettings, MenuLoadStatus } from '../types';
 import { parseMenuFileRow, validatePhone, validateEmail } from '../lib/inputValidation';
 import { dbService } from '../lib/dbService';
-import { buildAdminRecommendations } from '../lib/adminRecommendations';
+import { buildAdminRecommendations, buildRecommendationAnalytics, mergeRecommendations, CATEGORY_LABELS, IMPACT_LABELS } from '../lib/adminRecommendations';
+import type { AdminRecommendation, RecommendationCategory } from '../lib/adminRecommendations';
 import { filterOrdersForSearch, formatOrdersExportDocument } from '../lib/orderFormat';
 import OrderCombosDisplay from './OrderCombosDisplay';
 
@@ -49,6 +50,10 @@ export default function AdminDashboard({
   const [ordersStatusFilter, setOrdersStatusFilter] = useState<'all' | OrderWithItems['status']>('all');
   const [ordersExporting, setOrdersExporting] = useState(false);
   const [recommendationCustomers, setRecommendationCustomers] = useState<Customer[]>([]);
+  const [aiRecommendations, setAiRecommendations] = useState<AdminRecommendation[]>([]);
+  const [recLoading, setRecLoading] = useState(false);
+  const [recAiAvailable, setRecAiAvailable] = useState(true);
+  const [recCategoryFilter, setRecCategoryFilter] = useState<RecommendationCategory | 'all'>('all');
   // Pagination & Search States
   const [custPage, setCustPage] = useState(1);
   const [custSearch, setCustSearch] = useState('');
@@ -128,6 +133,39 @@ export default function AdminDashboard({
     return () => { cancelled = true; };
   }, [activeSubTab, orders]);
 
+  const recommendationSnapshot = useMemo(
+    () => buildRecommendationAnalytics(orders, tables, recommendationCustomers, profiles, menuItems),
+    [orders, tables, recommendationCustomers, profiles, menuItems]
+  );
+  const analyticsRecommendations = useMemo(
+    () => buildAdminRecommendations(orders, tables, recommendationCustomers, profiles, menuItems),
+    [orders, tables, recommendationCustomers, profiles, menuItems]
+  );
+  const recommendations = mergeRecommendations(analyticsRecommendations, aiRecommendations);
+  const filteredRecommendations = recCategoryFilter === 'all'
+    ? recommendations
+    : recommendations.filter(r => r.category === recCategoryFilter);
+
+  const loadAiRecommendations = useCallback(async () => {
+    if (!currentStaffId) return;
+    setRecLoading(true);
+    try {
+      const result = await dbService.fetchAiRecommendations(currentStaffId, recommendationSnapshot);
+      setAiRecommendations(result.recommendations || []);
+      setRecAiAvailable(result.aiAvailable !== false);
+    } catch {
+      setAiRecommendations([]);
+      setRecAiAvailable(false);
+    } finally {
+      setRecLoading(false);
+    }
+  }, [currentStaffId, recommendationSnapshot]);
+
+  useEffect(() => {
+    if (activeSubTab !== 'recommendations' || !currentStaffId) return;
+    loadAiRecommendations();
+  }, [activeSubTab, currentStaffId, loadAiRecommendations]);
+
   useEffect(() => {
     if (activeSubTab !== 'analytics') return;
 
@@ -201,8 +239,6 @@ export default function AdminDashboard({
     ordersStatusFilter === 'all' ? orders : orders.filter(o => o.status === ordersStatusFilter),
     ordersSearch
   ).sort((a, b) => b.id - a.id);
-
-  const recommendations = buildAdminRecommendations(orders, tables, recommendationCustomers);
 
   const downloadTextFile = (filename: string, content: string) => {
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
@@ -1644,40 +1680,100 @@ export default function AdminDashboard({
 
       {activeSubTab === 'recommendations' && (
         <div className="space-y-5">
-          <div className="bg-noir-card p-6 rounded-2xl border border-noir-border shadow-lg">
-            <h3 className="text-lg font-serif italic text-noir-gold flex items-center gap-2">
-              <Lightbulb className="w-5 h-5" /> Actionable Insights
-            </h3>
-            <p className="text-xs text-noir-muted mt-1">
-              Recommendations from table occupancy, customer activity, and order patterns.
-            </p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
-              <div className="rounded-xl border border-noir-border bg-noir-panel p-3">
-                <p className="text-[10px] text-noir-dim uppercase">Tables in use</p>
-                <p className="text-xl font-bold text-noir-gold">{occupiedTables}/{totalTables}</p>
+          <div className="bg-noir-card p-6 rounded-2xl border border-noir-border shadow-lg space-y-4">
+            <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-serif italic text-noir-gold flex items-center gap-2">
+                  <Lightbulb className="w-5 h-5" /> Actionable Insights
+                </h3>
+                <p className="text-xs text-noir-muted mt-1">
+                  Analytics from {recommendationSnapshot.summary.totalOrders} orders ({recommendationSnapshot.summary.deliveredOrders} delivered)
+                  · {recommendationSnapshot.monthLabel} · {recommendationSnapshot.season}
+                  {recAiAvailable ? ' · AI-enhanced' : ' · analytics only (AI unavailable)'}
+                </p>
               </div>
+              <button
+                type="button"
+                onClick={loadAiRecommendations}
+                disabled={recLoading || !currentStaffId}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border border-noir-border bg-noir-panel hover:border-noir-gold-o20 disabled:opacity-50 cursor-pointer shrink-0"
+              >
+                <RefreshCw className={`w-4 h-4 ${recLoading ? 'animate-spin' : ''}`} />
+                Refresh insights
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
               <div className="rounded-xl border border-noir-border bg-noir-panel p-3">
-                <p className="text-[10px] text-noir-dim uppercase">Open orders</p>
-                <p className="text-xl font-bold text-noir-text">{orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled').length}</p>
-              </div>
-              <div className="rounded-xl border border-noir-border bg-noir-panel p-3">
-                <p className="text-[10px] text-noir-dim uppercase">Delivered today</p>
-                <p className="text-xl font-bold text-emerald-400">
-                  {orders.filter(o => o.status === 'delivered' && new Date(o.delivered_at || o.created_at).toDateString() === new Date().toDateString()).length}
+                <p className="text-[10px] text-noir-dim uppercase">Peak day</p>
+                <p className="text-sm font-bold text-noir-gold">
+                  {[...recommendationSnapshot.dayOfWeek].sort((a, b) => b.orders - a.orders)[0]?.day || '—'}
                 </p>
               </div>
               <div className="rounded-xl border border-noir-border bg-noir-panel p-3">
-                <p className="text-[10px] text-noir-dim uppercase">Customers tracked</p>
-                <p className="text-xl font-bold text-noir-text">{recommendationCustomers.length || customersData.totalCount}</p>
+                <p className="text-[10px] text-noir-dim uppercase">Peak hour</p>
+                <p className="text-sm font-bold text-noir-text">
+                  {[...recommendationSnapshot.hourOfDay].sort((a, b) => b.orders - a.orders)[0]?.hour || '—'}
+                </p>
               </div>
+              <div className="rounded-xl border border-noir-border bg-noir-panel p-3">
+                <p className="text-[10px] text-noir-dim uppercase">Avg delivery</p>
+                <p className="text-sm font-bold text-noir-text">
+                  {recommendationSnapshot.summary.avgTotalDeliveryMinutes != null
+                    ? `${recommendationSnapshot.summary.avgTotalDeliveryMinutes} min`
+                    : '—'}
+                </p>
+              </div>
+              <div className="rounded-xl border border-noir-border bg-noir-panel p-3">
+                <p className="text-[10px] text-noir-dim uppercase">Cancel rate</p>
+                <p className="text-sm font-bold text-red-300">{recommendationSnapshot.summary.cancelRatePct}%</p>
+              </div>
+              <div className="rounded-xl border border-noir-border bg-noir-panel p-3">
+                <p className="text-[10px] text-noir-dim uppercase">Top pizza</p>
+                <p className="text-sm font-bold text-emerald-400 truncate" title={recommendationSnapshot.sales.topPizzas[0]?.name}>
+                  {recommendationSnapshot.sales.topPizzas[0]?.name || '—'}
+                </p>
+              </div>
+              <div className="rounded-xl border border-noir-border bg-noir-panel p-3">
+                <p className="text-[10px] text-noir-dim uppercase">Insights</p>
+                <p className="text-sm font-bold text-noir-gold">
+                  {filteredRecommendations.length} / {recommendations.length}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setRecCategoryFilter('all')}
+                className={`px-3 py-1 rounded-lg text-[10px] font-semibold border cursor-pointer ${recCategoryFilter === 'all' ? 'border-noir-gold text-noir-gold bg-noir-highlight' : 'border-noir-border text-noir-dim'}`}
+              >
+                All
+              </button>
+              {(Object.keys(CATEGORY_LABELS) as RecommendationCategory[]).map(cat => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setRecCategoryFilter(cat)}
+                  className={`px-3 py-1 rounded-lg text-[10px] font-semibold border cursor-pointer ${recCategoryFilter === cat ? 'border-noir-gold text-noir-gold bg-noir-highlight' : 'border-noir-border text-noir-dim'}`}
+                >
+                  {CATEGORY_LABELS[cat]}
+                </button>
+              ))}
             </div>
           </div>
 
+          {recLoading && (
+            <p className="text-xs text-noir-dim text-center py-2 flex items-center justify-center gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin" /> Generating AI insights…
+            </p>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {recommendations.map(rec => (
+            {filteredRecommendations.map(rec => (
               <div
                 key={rec.id}
-                className={`rounded-2xl border p-5 space-y-2 ${
+                className={`rounded-2xl border p-5 space-y-3 ${
                   rec.priority === 'high'
                     ? 'border-red-900/40 bg-red-950/20'
                     : rec.priority === 'medium'
@@ -1685,9 +1781,21 @@ export default function AdminDashboard({
                       : 'border-noir-border bg-noir-card'
                 }`}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <h4 className="font-semibold text-noir-text text-sm">{rec.title}</h4>
-                  <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded border ${
+                <div className="flex items-start justify-between gap-2">
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded border border-noir-border text-noir-dim">
+                        {CATEGORY_LABELS[rec.category]}
+                      </span>
+                      <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded border ${
+                        rec.source === 'ai' ? 'text-purple-300 border-purple-900/40' : 'text-sky-300 border-sky-900/40'
+                      }`}>
+                        {rec.source === 'ai' ? 'AI' : 'Analytics'}
+                      </span>
+                    </div>
+                    <h4 className="font-semibold text-noir-text text-sm">{rec.title}</h4>
+                  </div>
+                  <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded border shrink-0 ${
                     rec.priority === 'high'
                       ? 'text-red-300 border-red-900/40'
                       : rec.priority === 'medium'
@@ -1697,13 +1805,49 @@ export default function AdminDashboard({
                     {rec.priority}
                   </span>
                 </div>
-                <p className="text-xs text-noir-muted">{rec.detail}</p>
+
+                <p className="text-xs text-noir-muted leading-relaxed">{rec.detail}</p>
+
+                {rec.rationale && (
+                  <p className="text-[11px] text-noir-dim italic border-l-2 border-noir-border pl-2">{rec.rationale}</p>
+                )}
+
+                {rec.evidence && (
+                  <p className="text-[10px] text-noir-dim font-mono">Evidence: {rec.evidence}</p>
+                )}
+
+                <div className="space-y-1.5 pt-1 border-t border-noir-border/60">
+                  <p className="text-[9px] font-semibold text-noir-dim uppercase tracking-wider">Likely impact if actioned</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    {rec.impacts.map((imp, i) => (
+                      <div
+                        key={i}
+                        className={`rounded-lg px-2 py-1.5 text-[10px] border ${
+                          imp.direction === 'improve'
+                            ? 'border-emerald-900/40 bg-emerald-950/20 text-emerald-200'
+                            : imp.direction === 'risk'
+                              ? 'border-red-900/40 bg-red-950/20 text-red-200'
+                              : 'border-noir-border bg-noir-panel text-noir-muted'
+                        }`}
+                      >
+                        <span className="font-semibold">{IMPACT_LABELS[imp.area]}</span>
+                        <span className="text-noir-dim mx-1">·</span>
+                        <span>{imp.summary}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <p className="text-xs text-noir-gold font-medium pt-1 border-t border-noir-border/60">
                   → {rec.action}
                 </p>
               </div>
             ))}
           </div>
+
+          {!recLoading && filteredRecommendations.length === 0 && (
+            <p className="text-center text-xs text-noir-dim py-8 italic">No insights in this category yet — add more order history for richer patterns.</p>
+          )}
         </div>
       )}
 

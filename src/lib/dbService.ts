@@ -373,4 +373,14 @@ export const dbService = {
       },
     };
   },
+
+  async fetchAiRecommendations(
+    staffId: string,
+    analyticsSnapshot: unknown
+  ): Promise<{ recommendations: import('./adminRecommendations').AdminRecommendation[]; aiAvailable: boolean; message?: string }> {
+    return api('/api/admin/recommendations/ai', {
+      method: 'POST',
+      body: JSON.stringify({ staffId, analyticsSnapshot }),
+    });
+  },
 };
