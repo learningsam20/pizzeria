@@ -288,6 +288,96 @@ function loadKnowledgeBase(): string {
   return "Slice of Heaven Pizzeria help content is not loaded. See the Help tab in the app.";
 }
 
+const CHAT_MODEL = "gemini-3.5-flash";
+
+function createGeminiClient() {
+  return new GoogleGenAI({
+    apiKey: process.env.GEMINI_API_KEY!,
+    httpOptions: { headers: { "User-Agent": "aistudio-build" } },
+  });
+}
+
+const VOICE_ORDER_ACTIONS = new Set([
+  "show_menu", "verify_customer", "add_combo", "remove_combo",
+  "show_cart", "set_table", "place_order", "none",
+]);
+
+function buildVoiceOrderSystemPrompt(
+  menuJson: string,
+  tablesJson: string,
+  cartSummary: string,
+  customerSummary: string
+) {
+  return `You are the Slice of Heaven Pizzeria assistant handling VOICE/TYPED ORDERING.
+The customer's words come from browser speech-to-text — expect transcription errors. Never guess.
+
+MENU (ONLY these items exist — do not invent items or prices):
+${menuJson}
+
+AVAILABLE TABLES: ${tablesJson || "unknown"}
+
+CURRENT CART:
+${cartSummary || "empty"}
+
+CUSTOMER:
+${customerSummary || "not verified"}
+
+Return ONLY valid JSON (no markdown fences):
+{
+  "reply": "short friendly message to show/speak (markdown ok)",
+  "action": {
+    "type": "show_menu" | "verify_customer" | "add_combo" | "remove_combo" | "show_cart" | "set_table" | "place_order" | "none",
+    "params": {}
+  }
+}
+
+Action params:
+- show_menu: optional category "base"|"pizza"|"topping"
+- verify_customer: name, phone (10 digits), email, address (optional). If incomplete, set unclear:true and ask to TYPE name/phone.
+- add_combo: baseName, pizzas [{name, quantity}], toppings [{name, quantity}]. ONLY use exact menu names. If unsure, use type "none" — do NOT add_combo.
+- remove_combo: index (1-based) or name. If unclear which item, use "none" and ask to type the item number.
+- set_table: tableName e.g. "Table 3"
+- show_cart, place_order: empty params
+- none: clarification, decline, or general help — always include a helpful reply
+
+ROBUSTNESS RULES (critical):
+1. If intent is unclear or speech transcript is garbled → action "none", politely ask customer to TYPE the request in the text box.
+2. If multiple menu items could match → action "none", list options, ask to TYPE the exact name.
+3. If request is NOT possible here → action "none", politely decline and explain why:
+   - No delivery / takeaway through this assistant (dine-in only)
+   - No order cancellation or refunds (staff at table)
+   - No custom discounts beyond bulk rules
+   - No items not on the MENU list
+   - No payment method changes during ordering
+4. Never use add_combo unless you are confident every item matches the MENU exactly.
+5. Ask for name + phone (typed) before place_order if customer is not verified.
+6. Use Indian Rupees (₹). Be concise — replies may be spoken aloud.`;
+}
+
+function parseVoiceOrderResponse(raw: string) {
+  const fallback = {
+    text: `I didn't quite catch that. Please type your request below — for example: show menu, add Thin Crust Margherita, or place order.`,
+    action: { type: "none" as const, params: {} as Record<string, unknown> },
+  };
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return fallback;
+  try {
+    const parsed = JSON.parse(jsonMatch[0]) as {
+      reply?: string;
+      action?: { type?: string; params?: Record<string, unknown> };
+    };
+    const actionType = VOICE_ORDER_ACTIONS.has(String(parsed.action?.type))
+      ? parsed.action!.type!
+      : "none";
+    return {
+      text: parsed.reply || fallback.text,
+      action: { type: actionType, params: parsed.action?.params || {} },
+    };
+  } catch {
+    return fallback;
+  }
+}
+
 function syncAppHelpToKnowledgeBase() {
   if (!fs.existsSync(APP_HELP_PATH)) return;
   try {
@@ -597,17 +687,88 @@ async function initializeServer() {
     }
   });
 
-  // Chat API using Gemini
+  // Chat API using Gemini (support chat + voice ordering via mode=voice_order)
   app.post("/api/chat", async (req, res) => {
-    const { message, history, contextOrderId, contextOrderPhone, contextCustomerId, contextEmail, sessionId, currentOrders, currentMenuItems } = req.body;
+    const {
+      message,
+      history,
+      mode,
+      cartSummary,
+      customerSummary,
+      availableTables,
+      contextOrderId,
+      contextOrderPhone,
+      contextCustomerId,
+      contextEmail,
+      sessionId,
+      currentOrders,
+      currentMenuItems,
+    } = req.body;
+
+    if (!message || typeof message !== "string") {
+      return res.status(400).json({ error: "message is required" });
+    }
+
+    const isVoiceOrder = mode === "voice_order";
 
     if (!process.env.GEMINI_API_KEY) {
+      if (isVoiceOrder) {
+        return res.status(200).json({
+          text: "Assistant is not configured. Use the suggestion chips or type your order.",
+          action: { type: "none", params: {} },
+        });
+      }
       return res.status(200).json({
         text: "⚠️ Gemini API Key is missing! Please configure GEMINI_API_KEY in the Settings > Secrets panel of Google AI Studio.",
       });
     }
 
     try {
+      const ai = createGeminiClient();
+      const historyText = Array.isArray(history)
+        ? history.map((t: { role?: string; content?: string }) =>
+            `${t.role === "user" ? "Customer" : "Assistant"}: ${t.content || ""}`
+          ).join("\n")
+        : "";
+      const prompt = [historyText, `Customer: ${message}`, isVoiceOrder ? "JSON:" : ""].filter(Boolean).join("\n");
+
+      if (isVoiceOrder) {
+        const menuJson = Array.isArray(currentMenuItems)
+          ? JSON.stringify(currentMenuItems.slice(0, 120), null, 0)
+          : "[]";
+        const tablesJson = Array.isArray(availableTables)
+          ? availableTables.map((t: { table_name?: string }) => t.table_name).join(", ")
+          : "";
+
+        const response = await ai.models.generateContent({
+          model: CHAT_MODEL,
+          contents: prompt,
+          config: {
+            systemInstruction: buildVoiceOrderSystemPrompt(
+              menuJson,
+              tablesJson,
+              cartSummary || "",
+              customerSummary || ""
+            ),
+            temperature: 0.2,
+          },
+        });
+
+        const { text: replyText, action } = parseVoiceOrderResponse((response.text || "").trim());
+
+        if (sessionId) {
+          try {
+            const sb = getSupabaseDataClient();
+            await sb.from("chat_logs").insert([
+              { session_id: sessionId, role: "user", message, logged_at: new Date().toISOString() },
+              { session_id: sessionId, role: "assistant", message: replyText, logged_at: new Date().toISOString() },
+            ]);
+          } catch { /* chat logs optional */ }
+        }
+
+        return res.json({ text: replyText, action });
+      }
+
       const sb = getSupabaseDataClient();
       let verifiedContext: { customer?: Record<string, unknown> | null; order?: Record<string, unknown> | null } = {};
       const needsVerification = contextOrderId || contextOrderPhone || contextCustomerId || contextEmail;
@@ -635,17 +796,7 @@ async function initializeServer() {
         verifiedContext = { customer: v.customer, order: v.order };
       }
 
-      // 1. Initialize Gemini client
-      const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: {
-          headers: {
-            "User-Agent": "aistudio-build",
-          },
-        },
-      });
-
-      // 2. Load knowledge base (docs/app-help.md synced to km.txt)
+      // Load knowledge base (docs/app-help.md synced to km.txt)
       const kmContent = loadKnowledgeBase();
 
       // Try to load any current orders / menu items from active payload to enrich context
@@ -689,6 +840,8 @@ ${contextualData}
 - Be polite, direct, and concise. Do not guess or hallucinate.
 - If a customer asks about a specific order status, check if the ID or Phone is present in the "REAL-TIME DATA CONTEXT" above. If found, report the status ('confirmed', 'preparing', 'ready', 'delivered', 'cancelled') and expected time if relevant.
 - If the order isn't found, politely ask for their 10-digit phone number or order ID to look it up.
+- If the request is unclear, ask the customer to type the details (order ID, phone, or item name) rather than guessing.
+- If you cannot help (e.g. processing refunds, changing kitchen status, custom discounts), politely decline and direct them to staff at their table.
 - All monetary quotes must be in Indian Rupees (INR) or ₹.
 `;
 
@@ -703,7 +856,7 @@ ${contextualData}
       promptParts.push({ text: `Customer: ${message}` });
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: CHAT_MODEL,
         contents: promptParts.map(p => p.text).join("\n"),
         config: {
           systemInstruction: systemContext,

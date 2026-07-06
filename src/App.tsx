@@ -339,7 +339,7 @@ export default function App() {
 
   const canAccessStaffTabs = Boolean(staffSession && (staffSession.role === 'staff' || staffSession.role === 'admin'));
   const canAccessAdminTab = Boolean(staffSession && staffSession.role === 'admin');
-  const canAccessChatbotTab = canAccessStaffTabs;
+  const canAccessChatbotTab = Boolean(staffSession);
 
   return (
     <div className="min-h-screen bg-noir-bg flex flex-col font-sans text-noir-text" id="main-app-viewport">
@@ -421,7 +421,7 @@ export default function App() {
                     : 'text-noir-muted hover:text-noir-text hover:bg-noir-highlight/40'
                 }`}
               >
-                <Bot className="w-3.5 h-3.5" /> Support Chat
+                <Bot className="w-3.5 h-3.5" /> Assistant
               </button>
             )}
           </div>
@@ -627,11 +627,16 @@ export default function App() {
             )}
 
             {activeRole === 'chatbot' && canAccessChatbotTab && (
-              <div className="max-w-4xl mx-auto">
+              <div className="max-w-5xl mx-auto">
                 <Chatbot 
                   currentOrders={orders} 
                   menuItems={menuItems} 
-                  isAdmin={staffSession?.role === 'admin'} 
+                  isAdmin={staffSession?.role === 'admin'}
+                  appSettings={appSettings}
+                  staffLoggedIn={!!staffSession}
+                  availableTables={lockedTable ? [lockedTable] : tables.filter(t => !t.is_in_use)}
+                  defaultTableName={lockedTable?.table_name || 'Table 1'}
+                  onOrderPlaced={refreshOrdersAndTables}
                 />
               </div>
             )}
