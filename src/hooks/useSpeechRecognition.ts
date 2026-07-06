@@ -11,16 +11,23 @@ function getSpeechRecognition(): SpeechRecognitionCtor | null {
   return w.SpeechRecognition || w.webkitSpeechRecognition || null;
 }
 
+function speechRecognitionAvailable(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (!window.isSecureContext) return false;
+  return Boolean(getSpeechRecognition());
+}
+
 export function useSpeechRecognition(options?: {
   lang?: string;
   onInterim?: (text: string) => void;
   onFinal?: (text: string) => void;
   onError?: (code: string) => void;
 }) {
-  const [isSupported] = useState(() => Boolean(getSpeechRecognition()));
+  const [isSupported] = useState(speechRecognitionAvailable);
   const [isListening, setIsListening] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState('');
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const listeningRef = useRef(false);
   const onInterimRef = useRef(options?.onInterim);
   const onFinalRef = useRef(options?.onFinal);
   const onErrorRef = useRef(options?.onError);
@@ -28,15 +35,70 @@ export function useSpeechRecognition(options?: {
   onFinalRef.current = options?.onFinal;
   onErrorRef.current = options?.onError;
 
-  useEffect(() => {
+  const lang = options?.lang || 'en-IN';
+
+  const stopListening = useCallback(() => {
+    listeningRef.current = false;
+    const rec = recognitionRef.current;
+    recognitionRef.current = null;
+    if (rec) {
+      try {
+        rec.onresult = null;
+        rec.onerror = null;
+        rec.onend = null;
+        rec.onstart = null;
+        rec.stop();
+      } catch {
+        try {
+          rec.abort();
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    setIsListening(false);
+    setInterimTranscript('');
+  }, []);
+
+  const startListening = useCallback(async () => {
+    if (listeningRef.current) {
+      stopListening();
+      return;
+    }
+
     const Ctor = getSpeechRecognition();
-    if (!Ctor) return;
+    if (!Ctor) {
+      onErrorRef.current?.('not-supported');
+      return;
+    }
+
+    if (!window.isSecureContext) {
+      onErrorRef.current?.('insecure-context');
+      return;
+    }
+
+    // Prime the mic — required on many browsers before SpeechRecognition will capture.
+    try {
+      if (navigator.mediaDevices?.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
+      }
+    } catch {
+      onErrorRef.current?.('not-allowed');
+      return;
+    }
 
     const recognition = new Ctor();
-    recognition.lang = options?.lang || 'en-IN';
+    recognitionRef.current = recognition;
+    recognition.lang = lang;
     recognition.interimResults = true;
     recognition.continuous = false;
     recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      listeningRef.current = true;
+      setIsListening(true);
+    };
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       let interim = '';
@@ -57,37 +119,33 @@ export function useSpeechRecognition(options?: {
       }
     };
 
-    recognition.onend = () => setIsListening(false);
-    recognition.onerror = (event: Event) => {
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      const code = event.error || 'unknown';
+      if (code !== 'aborted') {
+        onErrorRef.current?.(code);
+      }
+      listeningRef.current = false;
       setIsListening(false);
-      const code = (event as SpeechRecognitionErrorEvent).error || 'unknown';
-      onErrorRef.current?.(code);
-    };
-
-    recognitionRef.current = recognition;
-    return () => {
-      recognition.abort();
       recognitionRef.current = null;
     };
-  }, [options?.lang]);
 
-  const startListening = useCallback(() => {
-    const recognition = recognitionRef.current;
-    if (!recognition || isListening) return;
-    setInterimTranscript('');
-    setIsListening(true);
+    recognition.onend = () => {
+      listeningRef.current = false;
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+
     try {
       recognition.start();
     } catch {
+      listeningRef.current = false;
       setIsListening(false);
+      recognitionRef.current = null;
+      onErrorRef.current?.('start-failed');
     }
-  }, [isListening]);
+  }, [lang, stopListening]);
 
-  const stopListening = useCallback(() => {
-    recognitionRef.current?.stop();
-    setIsListening(false);
-    setInterimTranscript('');
-  }, []);
+  useEffect(() => () => stopListening(), [stopListening]);
 
   return { isSupported, isListening, interimTranscript, startListening, stopListening };
 }

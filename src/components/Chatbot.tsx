@@ -218,16 +218,28 @@ export default function Chatbot({
         }
       },
       onError: (code) => {
-        const msg = code === 'no-speech'
-          ? `I didn't hear anything. Please try again or type your message. ${TYPE_IN_HINT}`
-          : `Sorry, voice input didn't work (${code.replace(/-/g, ' ')}). Please type your message instead. ${TYPE_IN_HINT}`;
+        const messages: Record<string, string> = {
+          'no-speech': "I didn't hear anything. Tap the mic and speak clearly, or type your message.",
+          'not-allowed': 'Microphone access is blocked. Allow mic permission for this site in browser settings, then try again.',
+          'service-not-allowed': 'Speech recognition is blocked in this browser context. Try Chrome or Edge on HTTPS.',
+          'insecure-context': 'Voice input requires HTTPS (or localhost). Open the app over a secure connection.',
+          'not-supported': 'Speech recognition is not supported in this browser. Use Chrome or Edge, or type your message.',
+          'start-failed': 'Could not start the microphone. Wait a second and tap the mic again, or type your message.',
+          'network': 'Speech recognition needs an internet connection in this browser. Check your network or type instead.',
+          'audio-capture': 'No microphone was found or it is in use by another app.',
+        };
+        const msg = `${messages[code] || `Voice input failed (${code.replace(/-/g, ' ')})`}. ${TYPE_IN_HINT}`;
         if (topTabRef.current === 'voice') {
           setVoiceMessages(prev => [...prev, { role: 'assistant', content: msg }]);
+        } else {
+          setMessages(prev => [...prev, { role: 'assistant', content: msg }]);
         }
       },
     });
 
-  const toggleMic = () => (isListening ? stopListening() : startListening());
+  const toggleMic = () => {
+    void (isListening ? stopListening() : startListening());
+  };
 
   const fetchKbStatus = async () => {
     try {
@@ -505,9 +517,16 @@ export default function Chatbot({
 
               <div className="p-3 border-t border-noir-border bg-noir-card flex gap-2 items-center">
                 <button
+                  type="button"
                   onClick={toggleMic}
                   disabled={!speechSupported || voiceLoading}
-                  title={speechSupported ? (isListening ? 'Stop listening' : 'Browser speech-to-text') : 'Speech recognition not supported in this browser (try Chrome or Edge)'}
+                  title={
+                    !speechSupported
+                      ? 'Speech recognition needs Chrome/Edge on HTTPS or localhost'
+                      : isListening
+                        ? 'Stop listening'
+                        : 'Tap and speak — browser speech-to-text'
+                  }
                   className={`p-2.5 rounded-xl border transition-colors cursor-pointer disabled:opacity-40 ${isListening ? 'bg-red-900/40 border-red-700 text-red-300 animate-pulse' : 'bg-noir-panel border-noir-border text-noir-gold hover:bg-noir-highlight'}`}
                   id="voice-mic-btn"
                 >
@@ -668,9 +687,16 @@ export default function Chatbot({
 
           <div className="p-3 border-t border-noir-border bg-noir-card flex space-x-2 items-center">
             <button
+              type="button"
               onClick={toggleMic}
               disabled={!speechSupported || loading}
-              title={speechSupported ? (isListening ? 'Stop listening' : 'Browser speech-to-text') : 'Speech recognition not supported in this browser (try Chrome or Edge)'}
+              title={
+                !speechSupported
+                  ? 'Speech recognition needs Chrome/Edge on HTTPS or localhost'
+                  : isListening
+                    ? 'Stop listening'
+                    : 'Tap and speak — browser speech-to-text'
+              }
               className={`p-2.5 rounded-xl border transition-colors cursor-pointer disabled:opacity-40 ${isListening ? 'bg-red-900/40 border-red-700 text-red-300 animate-pulse' : 'bg-noir-panel border-noir-border text-noir-gold hover:bg-noir-highlight'}`}
               id="support-mic-btn"
             >
