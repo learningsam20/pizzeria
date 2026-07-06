@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 type SpeechRecognitionCtor = new () => SpeechRecognition;
 
-function getSpeechRecognition(): SpeechRecognitionCtor | null {
+function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
   if (typeof window === 'undefined') return null;
   const w = window as Window & {
     SpeechRecognition?: SpeechRecognitionCtor;
@@ -11,10 +11,10 @@ function getSpeechRecognition(): SpeechRecognitionCtor | null {
   return w.SpeechRecognition || w.webkitSpeechRecognition || null;
 }
 
-function speechRecognitionAvailable(): boolean {
+/** Check at call time — some embedded browsers expose API only after user gesture. */
+export function isSpeechRecognitionSupported(): boolean {
   if (typeof window === 'undefined') return false;
-  if (!window.isSecureContext) return false;
-  return Boolean(getSpeechRecognition());
+  return Boolean(getSpeechRecognitionCtor());
 }
 
 export function useSpeechRecognition(options?: {
@@ -22,23 +22,50 @@ export function useSpeechRecognition(options?: {
   onInterim?: (text: string) => void;
   onFinal?: (text: string) => void;
   onError?: (code: string) => void;
+  onListeningChange?: (listening: boolean) => void;
 }) {
-  const [isSupported] = useState(speechRecognitionAvailable);
   const [isListening, setIsListening] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState('');
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const pendingTranscriptRef = useRef('');
+  const finalSentRef = useRef(false);
   const listeningRef = useRef(false);
+
   const onInterimRef = useRef(options?.onInterim);
   const onFinalRef = useRef(options?.onFinal);
   const onErrorRef = useRef(options?.onError);
+  const onListeningChangeRef = useRef(options?.onListeningChange);
   onInterimRef.current = options?.onInterim;
   onFinalRef.current = options?.onFinal;
   onErrorRef.current = options?.onError;
+  onListeningChangeRef.current = options?.onListeningChange;
 
   const lang = options?.lang || 'en-IN';
 
+  const releaseMediaStream = useCallback(() => {
+    mediaStreamRef.current?.getTracks().forEach(track => track.stop());
+    mediaStreamRef.current = null;
+  }, []);
+
+  const setListening = useCallback((value: boolean) => {
+    listeningRef.current = value;
+    setIsListening(value);
+    onListeningChangeRef.current?.(value);
+  }, []);
+
+  const flushPendingTranscript = useCallback(() => {
+    if (finalSentRef.current) return;
+    const text = pendingTranscriptRef.current.trim();
+    if (!text) return;
+    finalSentRef.current = true;
+    pendingTranscriptRef.current = '';
+    onFinalRef.current?.(text);
+    setInterimTranscript('');
+  }, []);
+
   const stopListening = useCallback(() => {
-    listeningRef.current = false;
+    flushPendingTranscript();
     const rec = recognitionRef.current;
     recognitionRef.current = null;
     if (rec) {
@@ -56,9 +83,10 @@ export function useSpeechRecognition(options?: {
         }
       }
     }
-    setIsListening(false);
+    releaseMediaStream();
+    setListening(false);
     setInterimTranscript('');
-  }, []);
+  }, [flushPendingTranscript, releaseMediaStream, setListening]);
 
   const startListening = useCallback(async () => {
     if (listeningRef.current) {
@@ -66,7 +94,11 @@ export function useSpeechRecognition(options?: {
       return;
     }
 
-    const Ctor = getSpeechRecognition();
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+
+    const Ctor = getSpeechRecognitionCtor();
     if (!Ctor) {
       onErrorRef.current?.('not-supported');
       return;
@@ -77,11 +109,13 @@ export function useSpeechRecognition(options?: {
       return;
     }
 
-    // Prime the mic — required on many browsers before SpeechRecognition will capture.
+    pendingTranscriptRef.current = '';
+    finalSentRef.current = false;
+    setInterimTranscript('');
+
     try {
       if (navigator.mediaDevices?.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach(track => track.stop());
+        mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
     } catch {
       onErrorRef.current?.('not-allowed');
@@ -92,12 +126,11 @@ export function useSpeechRecognition(options?: {
     recognitionRef.current = recognition;
     recognition.lang = lang;
     recognition.interimResults = true;
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
-      listeningRef.current = true;
-      setIsListening(true);
+      setListening(true);
     };
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
@@ -105,17 +138,28 @@ export function useSpeechRecognition(options?: {
       let finalText = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
-        if (result.isFinal) finalText += result[0].transcript;
-        else interim += result[0].transcript;
+        const transcript = result[0]?.transcript ?? '';
+        if (result.isFinal) finalText += transcript;
+        else interim += transcript;
       }
 
-      const display = (finalText || interim).trim();
-      setInterimTranscript(display);
-      if (display) onInterimRef.current?.(display);
+      const combined = (finalText || interim).trim();
+      if (combined) {
+        pendingTranscriptRef.current = combined;
+        setInterimTranscript(combined);
+        onInterimRef.current?.(combined);
+      }
 
       if (finalText.trim()) {
-        onFinalRef.current?.(finalText.trim());
+        finalSentRef.current = true;
+        pendingTranscriptRef.current = '';
         setInterimTranscript('');
+        onFinalRef.current?.(finalText.trim());
+        try {
+          recognition.stop();
+        } catch {
+          /* ignore */
+        }
       }
     };
 
@@ -124,30 +168,51 @@ export function useSpeechRecognition(options?: {
       if (code !== 'aborted') {
         onErrorRef.current?.(code);
       }
-      listeningRef.current = false;
-      setIsListening(false);
+      releaseMediaStream();
       recognitionRef.current = null;
+      setListening(false);
+      pendingTranscriptRef.current = '';
+      finalSentRef.current = false;
     };
 
     recognition.onend = () => {
-      listeningRef.current = false;
-      setIsListening(false);
+      flushPendingTranscript();
+      releaseMediaStream();
       recognitionRef.current = null;
+      setListening(false);
+      finalSentRef.current = false;
     };
 
     try {
       recognition.start();
     } catch {
-      listeningRef.current = false;
-      setIsListening(false);
+      releaseMediaStream();
       recognitionRef.current = null;
+      setListening(false);
       onErrorRef.current?.('start-failed');
     }
-  }, [lang, stopListening]);
+  }, [flushPendingTranscript, lang, releaseMediaStream, setListening, stopListening]);
 
-  useEffect(() => () => stopListening(), [stopListening]);
+  useEffect(() => () => {
+    const rec = recognitionRef.current;
+    recognitionRef.current = null;
+    if (rec) {
+      try {
+        rec.abort();
+      } catch {
+        /* ignore */
+      }
+    }
+    releaseMediaStream();
+  }, [releaseMediaStream]);
 
-  return { isSupported, isListening, interimTranscript, startListening, stopListening };
+  return {
+    isSupported: isSpeechRecognitionSupported(),
+    isListening,
+    interimTranscript,
+    startListening,
+    stopListening,
+  };
 }
 
 export function speakText(text: string, enabled = true) {

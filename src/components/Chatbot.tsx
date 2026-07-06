@@ -18,7 +18,7 @@ import {
   type VoiceOrderState,
   type VoiceAction,
 } from '../lib/voiceOrderEngine';
-import { useSpeechRecognition, speakText } from '../hooks/useSpeechRecognition';
+import { useSpeechRecognition, speakText, isSpeechRecognitionSupported } from '../hooks/useSpeechRecognition';
 import { formatMoney } from '../lib/appSettings';
 
 interface Message {
@@ -201,45 +201,57 @@ export default function Chatbot({
 
   processVoiceRef.current = processVoiceMessage;
 
-  const { isSupported: speechSupported, isListening, startListening, stopListening } =
+  const reportSpeechError = useCallback((code: string) => {
+    const messages: Record<string, string> = {
+      'no-speech': "I didn't hear anything. Tap the mic and speak clearly, or type your message.",
+      'not-allowed': 'Microphone access is blocked. Allow mic permission for this site in browser settings, then try again.',
+      'service-not-allowed': 'Speech recognition is blocked in this browser. Open this app in Chrome or Edge (not the IDE preview).',
+      'insecure-context': 'Voice input requires HTTPS or localhost.',
+      'not-supported': 'Speech-to-text is not available in this browser. Use Chrome or Edge, or type your message.',
+      'start-failed': 'Could not start the microphone. Wait a moment and tap the mic again.',
+      network: 'Speech recognition needs an internet connection in Chrome/Edge.',
+      'audio-capture': 'No microphone found, or it is in use by another app.',
+    };
+    const msg = `${messages[code] || `Voice input failed (${code.replace(/-/g, ' ')})`}. ${TYPE_IN_HINT}`;
+    if (topTabRef.current === 'voice') {
+      setVoiceMessages(prev => [...prev, { role: 'assistant', content: msg }]);
+    } else {
+      setMessages(prev => [...prev, { role: 'assistant', content: msg }]);
+    }
+  }, []);
+
+  const handleSpeechFinal = useCallback((text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    if (topTabRef.current === 'voice') {
+      setVoiceInput(trimmed);
+      void processVoiceRef.current(trimmed);
+    } else {
+      setInput(trimmed);
+      void sendSupportRef.current(trimmed);
+    }
+  }, []);
+
+  const { isListening, interimTranscript, startListening, stopListening } =
     useSpeechRecognition({
       lang: 'en-IN',
       onInterim: (text) => {
         if (topTabRef.current === 'voice') setVoiceInput(text);
         else setInput(text);
       },
-      onFinal: (text) => {
-        if (topTabRef.current === 'voice') {
-          setVoiceInput(text);
-          void processVoiceRef.current(text);
-        } else {
-          setInput(text);
-          void sendSupportRef.current(text);
-        }
-      },
-      onError: (code) => {
-        const messages: Record<string, string> = {
-          'no-speech': "I didn't hear anything. Tap the mic and speak clearly, or type your message.",
-          'not-allowed': 'Microphone access is blocked. Allow mic permission for this site in browser settings, then try again.',
-          'service-not-allowed': 'Speech recognition is blocked in this browser context. Try Chrome or Edge on HTTPS.',
-          'insecure-context': 'Voice input requires HTTPS (or localhost). Open the app over a secure connection.',
-          'not-supported': 'Speech recognition is not supported in this browser. Use Chrome or Edge, or type your message.',
-          'start-failed': 'Could not start the microphone. Wait a second and tap the mic again, or type your message.',
-          'network': 'Speech recognition needs an internet connection in this browser. Check your network or type instead.',
-          'audio-capture': 'No microphone was found or it is in use by another app.',
-        };
-        const msg = `${messages[code] || `Voice input failed (${code.replace(/-/g, ' ')})`}. ${TYPE_IN_HINT}`;
-        if (topTabRef.current === 'voice') {
-          setVoiceMessages(prev => [...prev, { role: 'assistant', content: msg }]);
-        } else {
-          setMessages(prev => [...prev, { role: 'assistant', content: msg }]);
-        }
-      },
+      onFinal: handleSpeechFinal,
+      onError: reportSpeechError,
     });
 
   const toggleMic = () => {
     void (isListening ? stopListening() : startListening());
   };
+
+  const speechHint = isSpeechRecognitionSupported()
+    ? isListening
+      ? 'Stop listening'
+      : 'Tap and speak — text goes to the assistant'
+    : 'Speech-to-text needs Chrome or Edge (open app in a normal browser window)';
 
   const fetchKbStatus = async () => {
     try {
@@ -499,6 +511,11 @@ export default function Chatbot({
                     </div>
                   </div>
                 )}
+                {isListening && (
+                  <p className="text-xs text-center text-red-300/90 font-mono animate-pulse py-1">
+                    Listening… speak now (tap mic to stop)
+                  </p>
+                )}
                 <div ref={voiceEndRef} />
               </div>
 
@@ -519,18 +536,13 @@ export default function Chatbot({
                 <button
                   type="button"
                   onClick={toggleMic}
-                  disabled={!speechSupported || voiceLoading}
-                  title={
-                    !speechSupported
-                      ? 'Speech recognition needs Chrome/Edge on HTTPS or localhost'
-                      : isListening
-                        ? 'Stop listening'
-                        : 'Tap and speak — browser speech-to-text'
-                  }
+                  disabled={voiceLoading}
+                  title={speechHint}
+                  aria-pressed={isListening}
                   className={`p-2.5 rounded-xl border transition-colors cursor-pointer disabled:opacity-40 ${isListening ? 'bg-red-900/40 border-red-700 text-red-300 animate-pulse' : 'bg-noir-panel border-noir-border text-noir-gold hover:bg-noir-highlight'}`}
                   id="voice-mic-btn"
                 >
-                  {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                  {isListening ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
                 </button>
                 <input
                   type="text"
@@ -669,6 +681,11 @@ export default function Chatbot({
                 </div>
               </div>
             )}
+            {isListening && (
+              <p className="text-xs text-center text-red-300/90 font-mono animate-pulse py-1 border-t border-noir-border bg-noir-sidebar">
+                Listening… speak now (tap mic to stop)
+              </p>
+            )}
             <div ref={messagesEndRef} />
           </div>
 
@@ -689,18 +706,13 @@ export default function Chatbot({
             <button
               type="button"
               onClick={toggleMic}
-              disabled={!speechSupported || loading}
-              title={
-                !speechSupported
-                  ? 'Speech recognition needs Chrome/Edge on HTTPS or localhost'
-                  : isListening
-                    ? 'Stop listening'
-                    : 'Tap and speak — browser speech-to-text'
-              }
+              disabled={loading}
+              title={speechHint}
+              aria-pressed={isListening}
               className={`p-2.5 rounded-xl border transition-colors cursor-pointer disabled:opacity-40 ${isListening ? 'bg-red-900/40 border-red-700 text-red-300 animate-pulse' : 'bg-noir-panel border-noir-border text-noir-gold hover:bg-noir-highlight'}`}
               id="support-mic-btn"
             >
-              {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+              {isListening ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
             </button>
             <input
               type="text"
