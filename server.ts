@@ -12,6 +12,7 @@ import {
   validateQuantityInput,
   sanitizeMenuItems,
   validateEmail,
+  normalizeCustomerEmail,
 } from "./src/lib/inputValidation.ts";
 import {
   INPUT_DATA_MENU_FILES,
@@ -1208,12 +1209,20 @@ ${contextualData}
       if (!nameCheck.ok) return res.status(400).json({ error: nameCheck.error });
       const phoneCheck = validatePhone(req.body.phone);
       if (!phoneCheck.ok) return res.status(400).json({ error: phoneCheck.error });
-      const payload: any = { name: req.body.name, phone: req.body.phone, delivery_address: req.body.delivery_address || null };
-      if (req.body.email != null && String(req.body.email).trim() !== '') {
-        const emailCheck = validateEmail(req.body.email);
+
+      const emailNorm = normalizeCustomerEmail(req.body.email);
+      if (emailNorm) {
+        const emailCheck = validateEmail(emailNorm);
         if (!emailCheck.ok) return res.status(400).json({ error: emailCheck.error });
-        payload.email = String(req.body.email).trim().toLowerCase();
       }
+
+      const payload = {
+        name: String(req.body.name).trim(),
+        phone: String(req.body.phone).trim(),
+        email: emailNorm,
+        delivery_address: req.body.delivery_address?.trim() || null,
+      };
+
       const { data, error } = await sb.from("customers").insert(payload).select().single();
       if (error) throw error;
       res.json(data);
@@ -1223,8 +1232,32 @@ ${contextualData}
   app.patch("/api/customers/:id", async (req, res) => {
     try {
       const sb = getSupabaseDataClient();
+      const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+
+      if (req.body.name !== undefined) {
+        const nameCheck = validateCustomerName(req.body.name);
+        if (!nameCheck.ok) return res.status(400).json({ error: nameCheck.error });
+        updates.name = String(req.body.name).trim();
+      }
+      if (req.body.phone !== undefined) {
+        const phoneCheck = validatePhone(req.body.phone);
+        if (!phoneCheck.ok) return res.status(400).json({ error: phoneCheck.error });
+        updates.phone = String(req.body.phone).trim();
+      }
+      if (req.body.email !== undefined) {
+        const emailNorm = normalizeCustomerEmail(req.body.email);
+        if (emailNorm) {
+          const emailCheck = validateEmail(emailNorm);
+          if (!emailCheck.ok) return res.status(400).json({ error: emailCheck.error });
+        }
+        updates.email = emailNorm;
+      }
+      if (req.body.delivery_address !== undefined) {
+        updates.delivery_address = req.body.delivery_address?.trim() || null;
+      }
+
       const { data, error } = await sb.from("customers")
-        .update({ ...req.body, updated_at: new Date().toISOString() })
+        .update(updates)
         .eq("id", req.params.id)
         .select()
         .single();

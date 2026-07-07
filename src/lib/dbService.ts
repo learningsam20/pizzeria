@@ -1,5 +1,6 @@
 import { getSupabase } from './supabaseClient';
 import { Profile, Customer, MenuItem, Order, OrderItem, OrderWithItems, DineInTable, AppSettings, MenuLoadStatus } from '../types';
+import { normalizeCustomerEmail } from './inputValidation';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -121,7 +122,7 @@ export const dbService = {
     const payload = {
       name: data.name.trim(),
       phone: data.phone.replace(/\D/g, '').slice(0, 10),
-      email: data.email.trim().toLowerCase(),
+      email: normalizeCustomerEmail(data.email),
       delivery_address: data.delivery_address?.trim() || null,
     };
 

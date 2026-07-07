@@ -45,6 +45,14 @@ export function validateEmail(input: unknown, options?: { required?: boolean }):
   return { ok: true };
 }
 
+/** Normalize optional customer email — empty/whitespace → null (matches DB customer_email_check). */
+export function normalizeCustomerEmail(input: unknown): string | null {
+  if (input == null) return null;
+  const trimmed = String(input).trim();
+  if (!trimmed) return null;
+  return trimmed.toLowerCase();
+}
+
 /** 2. Phone starting with 1; 6. empty phone */
 export function validatePhone(input: unknown): ValidationResult {
   const empty = validateNonEmpty(input, 'Mobile number');
