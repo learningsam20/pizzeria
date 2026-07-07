@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 import { MenuItem, Profile, Customer, OrderWithItems, OrderItem, DineInTable, AppSettings, MenuLoadStatus } from '../types';
 import { parseMenuFileRow, validatePhone, validateEmail } from '../lib/inputValidation';
+import { checkMenuNameConflict, findMenuNameConflicts } from '../lib/menuImport';
 import { dbService } from '../lib/dbService';
 import { buildAdminRecommendations, buildRecommendationAnalytics, mergeRecommendations, CATEGORY_LABELS, IMPACT_LABELS } from '../lib/adminRecommendations';
 import type { AdminRecommendation, RecommendationCategory } from '../lib/adminRecommendations';
@@ -107,6 +108,7 @@ export default function AdminDashboard({
   const [settingsGst, setSettingsGst] = useState(String(appSettings.gst_percent));
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [menuReloading, setMenuReloading] = useState(false);
+  const [menuToggleId, setMenuToggleId] = useState<number | null>(null);
 
   useEffect(() => {
     setSettingsDiscount(String(appSettings.bulk_discount_percent));
@@ -234,6 +236,27 @@ export default function AdminDashboard({
   const occupiedSeats = tables.filter(t => t.is_in_use).reduce((sum, t) => sum + t.capacity, 0);
 
   const analytics = dbService.calculateAnalytics(orders, profiles);
+
+  const menuNameConflicts = findMenuNameConflicts(
+    menuItems.map(m => ({ name: m.name, code: m.code, category: m.category }))
+  );
+
+  const handleToggleMenuActive = async (item: MenuItem) => {
+    setMenuToggleId(item.id);
+    setStatusMsg(null);
+    try {
+      await dbService.updateMenuItem(item.id, { is_active: !item.is_active });
+      setStatusMsg({
+        type: 'success',
+        text: `${item.name} is now ${item.is_active ? 'inactive' : 'active'}.`,
+      });
+      onRefresh();
+    } catch (err: any) {
+      setStatusMsg({ type: 'error', text: err.message || 'Could not update menu item.' });
+    } finally {
+      setMenuToggleId(null);
+    }
+  };
 
   const filteredAdminOrders = filterOrdersForSearch(
     ordersStatusFilter === 'all' ? orders : orders.filter(o => o.status === ordersStatusFilter),
@@ -382,10 +405,15 @@ export default function AdminDashboard({
         if (isNaN(priceNum) || priceNum <= 0) {
           throw new Error("Price must be a valid number greater than 0");
         }
+        const code = menuCode.trim().toUpperCase();
+        const name = menuName.trim();
+        const nameConflict = checkMenuNameConflict(menuItems, { name, code, category: menuCat });
+        if (nameConflict) throw new Error(nameConflict);
+
         await dbService.createMenuItem({
-          code: menuCode.trim().toUpperCase(),
+          code,
           category: menuCat,
-          name: menuName.trim(),
+          name,
           price_inr: priceNum,
           currency: appSettings.default_currency,
           description: menuDesc.trim() || null,
@@ -592,11 +620,26 @@ export default function AdminDashboard({
             is_active: String(r.is_active || 'true').toLowerCase() !== 'false',
           });
         });
-        if (formatted.length === 0 && rowErrors.length > 0) {
+
+        const batchConflicts = findMenuNameConflicts(formatted);
+        batchConflicts.forEach(c => rowErrors.push(`Duplicate name in upload: ${c}`));
+        formatted.forEach(item => {
+          const conflict = checkMenuNameConflict(menuItems, item);
+          if (conflict) rowErrors.push(`${item.code}: ${conflict}`);
+        });
+
+        if (rowErrors.length > 0) {
           setBulkResult({ success: 0, errors: rowErrors });
           setStatusMsg({ type: 'error', text: rowErrors[0] });
           return;
         }
+
+        if (formatted.length === 0) {
+          setBulkResult({ success: 0, errors: rowErrors.length ? rowErrors : ['No valid rows to import.'] });
+          setStatusMsg({ type: 'error', text: rowErrors[0] || 'No valid rows to import.' });
+          return;
+        }
+
         const res = await dbService.bulkCreateMenuItems(formatted);
         setBulkResult({ ...res, errors: [...rowErrors, ...res.errors] });
         if (res.errors.length > 0) {
@@ -685,7 +728,7 @@ export default function AdminDashboard({
             }`}
           >
             {tab === 'menu'
-              ? 'Pizza & Master Menu'
+              ? 'Pizza & Menu'
               : tab === 'settings'
                 ? 'Store Settings'
                 : tab === 'users'
@@ -1039,7 +1082,7 @@ export default function AdminDashboard({
         <div className="bg-noir-card p-6 rounded-2xl border border-noir-border shadow-lg space-y-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div>
-              <h3 className="text-lg font-serif italic text-noir-gold">Customers Registry (Master Table)</h3>
+              <h3 className="text-lg font-serif italic text-noir-gold">Customers Registry</h3>
               <p className="text-xs text-noir-muted">Add, bulk-upload, and search client records securely.</p>
             </div>
             
@@ -1314,8 +1357,8 @@ export default function AdminDashboard({
         <div className="bg-noir-card p-6 rounded-2xl border border-noir-border shadow-lg space-y-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div>
-              <h3 className="text-lg font-serif italic text-noir-gold">Pizza & Master Menu (Master Table)</h3>
-              <p className="text-xs text-noir-muted">Manage pizza recipes, customized bases, and topping snapshots.</p>
+              <h3 className="text-lg font-serif italic text-noir-gold">Pizza & Menu</h3>
+              <p className="text-xs text-noir-muted">Manage pizza recipes, crust bases, and toppings. Deactivate items to hide them from customer ordering.</p>
               <p className="text-[10px] text-noir-dim mt-1">
                 On server startup, menu import files (bases, pizzas, toppings) are loaded automatically.
               </p>
@@ -1345,6 +1388,15 @@ export default function AdminDashboard({
               </button>
             </div>
           </div>
+
+          {menuNameConflicts.length > 0 && (
+            <div className="rounded-xl border border-red-900/40 bg-red-950/20 p-4 text-xs text-red-200 space-y-1">
+              <p className="font-semibold text-red-300">Duplicate item names detected — fix before customers can order:</p>
+              <ul className="list-disc pl-4 space-y-0.5">
+                {menuNameConflicts.map(msg => <li key={msg}>{msg}</li>)}
+              </ul>
+            </div>
+          )}
 
           {/* Search Box */}
           <div className="max-w-md">
@@ -1547,7 +1599,7 @@ export default function AdminDashboard({
                     m.code.toLowerCase().includes(menuSearch.toLowerCase())
                   )
                   .map(m => (
-                    <tr key={m.id} className="hover:bg-noir-highlight/20 transition-colors">
+                    <tr key={m.id} className={`hover:bg-noir-highlight/20 transition-colors ${!m.is_active ? 'opacity-50' : ''}`}>
                       <td className="py-2.5 font-mono font-bold text-noir-gold uppercase">{m.code}</td>
                       <td className="py-2.5">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
@@ -1564,7 +1616,18 @@ export default function AdminDashboard({
                       <td className="py-2.5 font-mono font-bold text-noir-text">₹{m.price_inr}</td>
                       <td className="py-2.5 text-noir-muted italic max-w-xs truncate" title={m.description || ''}>{m.description || 'No description added'}</td>
                       <td className="py-2.5 text-right">
-                        <span className="text-[10px] bg-emerald-950/40 text-emerald-300 font-medium px-2 py-0.5 rounded border border-emerald-900/40">Active</span>
+                        <button
+                          type="button"
+                          disabled={menuToggleId === m.id}
+                          onClick={() => handleToggleMenuActive(m)}
+                          className={`text-[10px] font-medium px-2 py-0.5 rounded border cursor-pointer disabled:opacity-50 ${
+                            m.is_active
+                              ? 'bg-emerald-950/40 text-emerald-300 border-emerald-900/40 hover:bg-emerald-900/30'
+                              : 'bg-noir-highlight text-noir-dim border-noir-border hover:text-noir-text'
+                          }`}
+                        >
+                          {menuToggleId === m.id ? '…' : m.is_active ? 'Active · Deactivate' : 'Inactive · Activate'}
+                        </button>
                       </td>
                     </tr>
                   ))}

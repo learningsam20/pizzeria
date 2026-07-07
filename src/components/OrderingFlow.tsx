@@ -12,10 +12,9 @@ import {
   validatePhone,
   validateEmail,
   validateQuantityInput,
-  parseMenuItemSelection,
-  parseQuantityInput,
   validateNonEmpty,
 } from '../lib/inputValidation';
+import { findMenuNameConflicts } from '../lib/menuImport';
 import BillSummary from './BillSummary';
 import OrderCombosDisplay from './OrderCombosDisplay';
 
@@ -66,9 +65,6 @@ export default function OrderingFlow({ menuItems, appSettings, onOrderPlaced, on
   const [tableName, setTableName] = useState<string>(lockedTable?.table_name || 'Table 1');
   const [qtyError, setQtyError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<{ name?: string; phone?: string; email?: string }>({});
-  const [quickItemNum, setQuickItemNum] = useState('');
-  const [quickQty, setQuickQty] = useState('1');
-  const [quickAddError, setQuickAddError] = useState<string | null>(null);
 
   // Draft combo being built
   const [draftBaseId, setDraftBaseId] = useState<number | null>(null);
@@ -188,6 +184,10 @@ export default function OrderingFlow({ menuItems, appSettings, onOrderPlaced, on
   const activePizzas   = menuItems.filter(m => m.category === 'pizza'   && m.is_active);
   const activeToppings = menuItems.filter(m => m.category === 'topping' && m.is_active);
 
+  const menuNameConflicts = findMenuNameConflicts(
+    menuItems.filter(m => m.is_active).map(m => ({ name: m.name, code: m.code, category: m.category }))
+  );
+
   const draftPizzaCount = Object.values(draftPizzas).reduce((s, q) => s + q, 0);
 
   const committedPizzaQty = combos.reduce((s, c) => s + comboPizzaCount(c), 0);
@@ -261,41 +261,6 @@ export default function OrderingFlow({ menuItems, appSettings, onOrderPlaced, on
     });
   };
 
-  const numberedPizzas = activePizzas.map((p, i) => ({ ...p, menuNumber: i + 1 }));
-
-  const handleQuickAddByNumber = (e: React.FormEvent) => {
-    e.preventDefault();
-    setQuickAddError(null);
-
-    const itemResult = parseMenuItemSelection(quickItemNum, numberedPizzas);
-    if (!itemResult.ok) {
-      setQuickAddError(itemResult.error);
-      return;
-    }
-
-    const qtyResult = parseQuantityInput(quickQty, { min: 1, max: 10, label: 'Quantity' });
-    if (!qtyResult.ok) {
-      setQuickAddError(qtyResult.error);
-      return;
-    }
-
-    const pizza = numberedPizzas[itemResult.index];
-    const newDraftTotal = draftPizzaCount + qtyResult.value;
-    const orderTotal = committedPizzaQty + newDraftTotal;
-    if (orderTotal > 10) {
-      setQuickAddError(`Maximum 10 pizzas per order. Adding ${qtyResult.value} would bring your total to ${orderTotal}.`);
-      return;
-    }
-
-    setDraftPizzas(prev => {
-      const key = String(pizza.id);
-      return { ...prev, [key]: (prev[key] || 0) + qtyResult.value };
-    });
-    setQuickItemNum('');
-    setQuickQty('1');
-    setQtyError(null);
-  };
-
   const handleEditCombo = (combo: ComboEntry) => {
     setEditingComboId(combo.id);
     setDraftBaseId(combo.baseId);
@@ -339,6 +304,13 @@ export default function OrderingFlow({ menuItems, appSettings, onOrderPlaced, on
 
     if (!staffLoggedIn) {
       setSubmitMsg({ type: 'error', text: '⛔ Ordering is only available after a staff member has logged in.' });
+      return;
+    }
+    if (menuNameConflicts.length > 0) {
+      setSubmitMsg({
+        type: 'error',
+        text: `Menu configuration error: duplicate item names (${menuNameConflicts[0]}). Ask admin to fix Pizza & Menu before ordering.`,
+      });
       return;
     }
     if (combos.length === 0) {
@@ -517,6 +489,17 @@ export default function OrderingFlow({ menuItems, appSettings, onOrderPlaced, on
       {/* ========== ORDERING TAB ========== */}
       {activeTab === 'order' && (
         <div className="space-y-6">
+          {menuNameConflicts.length > 0 && (
+            <div className="p-3 bg-noir-panel border border-red-500/30 rounded-xl text-xs text-red-400 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">Menu has duplicate item names with different codes — ordering is blocked until admin fixes this.</p>
+                <ul className="mt-1 list-disc pl-4 space-y-0.5 text-[11px]">
+                  {menuNameConflicts.map(msg => <li key={msg}>{msg}</li>)}
+                </ul>
+              </div>
+            </div>
+          )}
           {lockedTable && (
             <div className="bg-noir-highlight border border-noir-gold-o20 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
@@ -567,7 +550,7 @@ export default function OrderingFlow({ menuItems, appSettings, onOrderPlaced, on
             <div className="bg-noir-card p-5 rounded-2xl border border-noir-border shadow-lg space-y-4">
               <div>
                 <h3 className="font-serif italic text-noir-gold text-base">2. Select Pizza Variety</h3>
-                <p className="text-xs text-noir-muted">Pick one or more pizzas for this combo.</p>
+                <p className="text-xs text-noir-muted">Tap a pizza to add it to this combo (use +/− to adjust quantity).</p>
               </div>
               {qtyError && (
                 <p className="text-xs text-red-400 font-semibold flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" />{qtyError}</p>
@@ -607,46 +590,6 @@ export default function OrderingFlow({ menuItems, appSettings, onOrderPlaced, on
                   );
                 })}
               </div>
-
-              {/* Order by item number (validates all numeric edge cases) */}
-              <form onSubmit={handleQuickAddByNumber} className="border-t border-noir-border pt-4 space-y-3">
-                <p className="text-[10px] font-semibold text-noir-dim uppercase tracking-wider">Or enter by menu number</p>
-                <ol className="text-[10px] text-noir-muted space-y-0.5 max-h-24 overflow-y-auto font-mono">
-                  {numberedPizzas.map(p => (
-                    <li key={p.id}>{p.menuNumber}. {p.name} — ₹{p.price_inr}</li>
-                  ))}
-                </ol>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[9px] text-noir-dim uppercase">Item #</label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={quickItemNum}
-                      onChange={e => { setQuickItemNum(e.target.value); setQuickAddError(null); }}
-                      placeholder="1–N"
-                      className="w-full mt-1 px-2 py-1.5 bg-noir-panel border border-noir-border rounded-lg text-xs font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[9px] text-noir-dim uppercase">Quantity</label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={quickQty}
-                      onChange={e => { setQuickQty(e.target.value); setQuickAddError(null); }}
-                      placeholder="1–10"
-                      className="w-full mt-1 px-2 py-1.5 bg-noir-panel border border-noir-border rounded-lg text-xs font-mono"
-                    />
-                  </div>
-                </div>
-                {quickAddError && (
-                  <p className="text-[10px] text-red-400 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{quickAddError}</p>
-                )}
-                <button type="submit" className="px-3 py-1.5 bg-noir-highlight border border-noir-border rounded-lg text-[10px] font-semibold text-noir-gold cursor-pointer hover:bg-noir-sidebar">
-                  Add to combo
-                </button>
-              </form>
             </div>
 
             {/* Step 3: Toppings */}
@@ -684,12 +627,11 @@ export default function OrderingFlow({ menuItems, appSettings, onOrderPlaced, on
               </div>
             </div>
 
-            {/* Add combo to order button */}
             <div className="flex items-center gap-3 flex-wrap">
               <button
                 type="button"
                 onClick={handleAddCombo}
-                disabled={!draftPizzaCount}
+                disabled={!draftPizzaCount || menuNameConflicts.length > 0}
                 className="flex items-center gap-2 px-5 py-2.5 bg-noir-gold hover:bg-noir-gold-hover disabled:opacity-40 disabled:cursor-not-allowed text-black font-semibold text-xs rounded-xl shadow transition-all cursor-pointer"
               >
                 <PackagePlus className="w-4 h-4" />

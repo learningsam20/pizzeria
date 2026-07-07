@@ -110,7 +110,11 @@ export interface OrderWithItems extends Order {
 export interface AppConfig {
   supabaseUrl: string | null;
   supabaseAnonKey: string | null;
+  /** True when any AI provider is configured (OpenRouter or Gemini). */
   hasGemini: boolean;
+  hasAi?: boolean;
+  aiProvider?: 'openrouter' | 'gemini' | null;
+  aiModel?: string | null;
 }
 
 export interface AppSettings {

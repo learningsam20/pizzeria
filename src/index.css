@@ -7,74 +7,82 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
+/* Dark theme (default — Pizzeria Noir) */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+  --noir-bg: #050505;
+  --noir-sidebar: #0a0a0a;
+  --noir-card: #0f0f0f;
+  --noir-panel: #080808;
+  --noir-highlight: #1a1a1a;
+  --noir-footer: #000000;
+  --noir-gold: #c5a059;
+  --noir-gold-hover: #d4b57a;
+  --noir-text: #e0d8d0;
+  --noir-muted: rgba(224, 216, 208, 0.6);
+  --noir-dim: rgba(224, 216, 208, 0.4);
+  --noir-border: #1f1f1f;
+  --noir-border-light: #333333;
+  --noir-gold-o20: rgba(197, 160, 89, 0.2);
+  --noir-scrollbar-track: #050505;
+  --noir-scrollbar-thumb: #1f1f1f;
+  --noir-scrollbar-thumb-hover: #333333;
+}
+
+/* Light theme */
+[data-theme="light"] {
+  color-scheme: light;
+  --noir-bg: #f7f4ef;
+  --noir-sidebar: #efeae2;
+  --noir-card: #ffffff;
+  --noir-panel: #faf8f5;
+  --noir-highlight: #ebe4d8;
+  --noir-footer: #e8e2d8;
+  --noir-gold: #9a7328;
+  --noir-gold-hover: #7d5c1a;
+  --noir-text: #1a1612;
+  --noir-muted: rgba(26, 22, 18, 0.62);
+  --noir-dim: rgba(26, 22, 18, 0.42);
+  --noir-border: #ddd5c8;
+  --noir-border-light: #c9bfb0;
+  --noir-gold-o20: rgba(154, 115, 40, 0.22);
+  --noir-scrollbar-track: #f0ebe3;
+  --noir-scrollbar-thumb: #cfc5b6;
+  --noir-scrollbar-thumb-hover: #b8ab98;
+}
+
 body {
-  background-color: #050505;
-  color: #e0d8d0;
+  background-color: var(--noir-bg);
+  color: var(--noir-text);
   font-family: var(--font-sans);
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-/* Sophisticated Dark (Pizza Noir) Utility Styles */
-.bg-noir-bg {
-  background-color: #050505 !important;
-}
-.bg-noir-sidebar {
-  background-color: #0a0a0a !important;
-}
-.bg-noir-card {
-  background-color: #0f0f0f !important;
-}
-.bg-noir-panel {
-  background-color: #080808 !important;
-}
-.bg-noir-highlight {
-  background-color: #1a1a1a !important;
-}
+.bg-noir-bg { background-color: var(--noir-bg) !important; }
+.bg-noir-sidebar { background-color: var(--noir-sidebar) !important; }
+.bg-noir-card { background-color: var(--noir-card) !important; }
+.bg-noir-panel { background-color: var(--noir-panel) !important; }
+.bg-noir-highlight { background-color: var(--noir-highlight) !important; }
+.bg-noir-footer { background-color: var(--noir-footer) !important; }
 
-.text-noir-gold {
-  color: #c5a059 !important;
-}
-.text-noir-gold-hover:hover {
-  color: #d4b57a !important;
-}
-.text-noir-text {
-  color: #e0d8d0 !important;
-}
-.text-noir-muted {
-  color: rgba(224, 216, 208, 0.6) !important;
-}
-.text-noir-dim {
-  color: rgba(224, 216, 208, 0.4) !important;
-}
+.text-noir-gold { color: var(--noir-gold) !important; }
+.text-noir-gold-hover:hover { color: var(--noir-gold-hover) !important; }
+.text-noir-text { color: var(--noir-text) !important; }
+.text-noir-muted { color: var(--noir-muted) !important; }
+.text-noir-dim { color: var(--noir-dim) !important; }
 
-.border-noir-border {
-  border-color: #1f1f1f !important;
-}
-.border-noir-border-light {
-  border-color: #333333 !important;
-}
-.border-noir-gold-o20 {
-  border-color: rgba(197, 160, 89, 0.2) !important;
-}
+.border-noir-border { border-color: var(--noir-border) !important; }
+.border-noir-border-light { border-color: var(--noir-border-light) !important; }
+.border-noir-gold-o20 { border-color: var(--noir-gold-o20) !important; }
 
-.bg-noir-gold {
-  background-color: #c5a059 !important;
-}
-.bg-noir-gold-hover:hover {
-  background-color: #d4b57a !important;
-}
+.bg-noir-gold { background-color: var(--noir-gold) !important; }
+.bg-noir-gold-hover:hover { background-color: var(--noir-gold-hover) !important; }
 
-/* Custom Scrollbars for Dark Theme */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: #050505;
-}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--noir-scrollbar-track); }
 ::-webkit-scrollbar-thumb {
-  background: #1f1f1f;
+  background: var(--noir-scrollbar-thumb);
   border-radius: 3px;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: #333333;
-}
+::-webkit-scrollbar-thumb:hover { background: var(--noir-scrollbar-thumb-hover); }

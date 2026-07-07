@@ -3,7 +3,6 @@ import { createServer as createHttpServer } from "http";
 import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import {
@@ -19,6 +18,8 @@ import {
   readInputDataMenuFileEntry,
   parseMenuFileContent,
   type MenuUpsertPayload,
+  checkMenuNameConflict,
+  findMenuNameConflicts,
 } from "./src/lib/menuImport.ts";
 import {
   DEFAULT_APP_SETTINGS,
@@ -29,6 +30,12 @@ import {
 import type { AppSettings, MenuLoadStatus, OrderWithItems } from "./src/types.ts";
 import { formatOrderLogBlock, formatOrdersExportDocument } from "./src/lib/orderFormat.ts";
 import { parseAiRecommendations } from "./src/lib/adminRecommendations.ts";
+import {
+  generateAiText,
+  getAiPublicConfig,
+  isAiConfigured,
+  aiNotConfiguredMessage,
+} from "./src/lib/aiProvider.ts";
 
 // Load environment variables
 dotenv.config();
@@ -253,15 +260,6 @@ function loadKnowledgeBase(): string {
   return "Slice of Heaven Pizzeria help content is not loaded. See the Help tab in the app.";
 }
 
-const CHAT_MODEL = "gemini-3.5-flash";
-
-function createGeminiClient() {
-  return new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY!,
-    httpOptions: { headers: { "User-Agent": "aistudio-build" } },
-  });
-}
-
 const VOICE_ORDER_ACTIONS = new Set([
   "show_menu", "verify_customer", "add_combo", "remove_combo",
   "show_cart", "set_table", "place_order", "none",
@@ -423,7 +421,7 @@ async function initializeServer() {
     res.json({
       supabaseUrl: process.env.SUPABASE_URL || null,
       supabaseAnonKey: process.env.SUPABASE_ANON_KEY || null,
-      hasGemini: !!process.env.GEMINI_API_KEY,
+      ...getAiPublicConfig(),
     });
   });
 
@@ -676,7 +674,7 @@ async function initializeServer() {
 
     const isVoiceOrder = mode === "voice_order";
 
-    if (!process.env.GEMINI_API_KEY) {
+    if (!isAiConfigured()) {
       if (isVoiceOrder) {
         return res.status(200).json({
           text: "Assistant is not configured. Use the suggestion chips or type your order.",
@@ -684,12 +682,11 @@ async function initializeServer() {
         });
       }
       return res.status(200).json({
-        text: "⚠️ Gemini API Key is missing! Please configure GEMINI_API_KEY in the Settings > Secrets panel of Google AI Studio.",
+        text: `⚠️ ${aiNotConfiguredMessage()}`,
       });
     }
 
     try {
-      const ai = createGeminiClient();
       const historyText = Array.isArray(history)
         ? history.map((t: { role?: string; content?: string }) =>
             `${t.role === "user" ? "Customer" : "Assistant"}: ${t.content || ""}`
@@ -705,21 +702,18 @@ async function initializeServer() {
           ? availableTables.map((t: { table_name?: string }) => t.table_name).join(", ")
           : "";
 
-        const response = await ai.models.generateContent({
-          model: CHAT_MODEL,
-          contents: prompt,
-          config: {
-            systemInstruction: buildVoiceOrderSystemPrompt(
-              menuJson,
-              tablesJson,
-              cartSummary || "",
-              customerSummary || ""
-            ),
-            temperature: 0.2,
-          },
+        const raw = await generateAiText({
+          systemInstruction: buildVoiceOrderSystemPrompt(
+            menuJson,
+            tablesJson,
+            cartSummary || "",
+            customerSummary || ""
+          ),
+          userContent: prompt,
+          temperature: 0.2,
         });
 
-        const { text: replyText, action } = parseVoiceOrderResponse((response.text || "").trim());
+        const { text: replyText, action } = parseVoiceOrderResponse(raw);
 
         if (sessionId) {
           try {
@@ -810,26 +804,21 @@ ${contextualData}
 - All monetary quotes must be in Indian Rupees (INR) or ₹.
 `;
 
-      // Structure contents for generateContent
-      // Mapping previous chat history to parts
-      const promptParts = [];
-      if (history && Array.isArray(history)) {
-        for (const turn of history) {
-          promptParts.push({ text: `${turn.role === "user" ? "Customer" : "Assistant"}: ${turn.content}` });
-        }
-      }
-      promptParts.push({ text: `Customer: ${message}` });
+      const chatHistory = Array.isArray(history)
+        ? history
+            .filter((t: { role?: string; content?: string }) => t?.content)
+            .map((t: { role?: string; content?: string }) => ({
+              role: (t.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
+              content: String(t.content || ""),
+            }))
+        : undefined;
 
-      const response = await ai.models.generateContent({
-        model: CHAT_MODEL,
-        contents: promptParts.map(p => p.text).join("\n"),
-        config: {
-          systemInstruction: systemContext,
-          temperature: 0.3,
-        },
-      });
-
-      const replyText = response.text || "I'm sorry, I couldn't process that response.";
+      const replyText = await generateAiText({
+        systemInstruction: systemContext,
+        userContent: `Customer: ${message}`,
+        temperature: 0.3,
+        history: chatHistory,
+      }) || "I'm sorry, I couldn't process that response.";
 
       if (sessionId) {
         try {
@@ -1005,7 +994,22 @@ ${contextualData}
       );
       fileResult.errors.push(...parseErrors);
 
+      const batchConflicts = findMenuNameConflicts(items);
+      if (batchConflicts.length) {
+        fileResult.errors.push(...batchConflicts.map((c) => `Duplicate name in file: ${c}`));
+      }
+
+      const { data: existingMenu } = await sb.from("menu_items").select("id, name, code, category");
+
       for (const item of items) {
+        const nameConflict = checkMenuNameConflict(existingMenu || [], item);
+        if (nameConflict) {
+          fileResult.errors.push(`${item.code}: ${nameConflict}`);
+          continue;
+        }
+        if (batchConflicts.some((c) => c.includes(item.name.trim()))) {
+          continue;
+        }
         try {
           const action = await upsertMenuItemRow(sb, item);
           fileResult.success += 1;
@@ -1089,9 +1093,30 @@ ${contextualData}
         return res.status(400).json({ error: "Price field is required for every menu item." });
       }
       if (req.body.price_inr <= 0 || req.body.price_inr > 10000) return res.status(400).json({ error: "Price must be between 1 and 10,000 INR." });
+      const category = req.body.category;
+      if (!['base', 'pizza', 'topping'].includes(category)) {
+        return res.status(400).json({ error: "Category must be base, pizza, or topping." });
+      }
+      const name = String(req.body.name || "").trim();
+      if (!name) return res.status(400).json({ error: "Item name is required." });
+
       const { data: existing } = await sb.from("menu_items").select("id").eq("code", code).maybeSingle();
       if (existing) return res.status(409).json({ error: `Menu item with code ${code} already exists.` });
-      const { data, error } = await sb.from("menu_items").insert({ ...req.body, code }).select().single();
+
+      const { data: allMenu } = await sb.from("menu_items").select("id, name, code, category");
+      const nameConflict = checkMenuNameConflict(allMenu || [], { name, code, category });
+      if (nameConflict) return res.status(409).json({ error: nameConflict });
+
+      const payload = {
+        code,
+        category,
+        name,
+        price_inr: Number(req.body.price_inr),
+        currency: req.body.currency || "INR",
+        description: req.body.description?.trim() || null,
+        is_active: req.body.is_active !== false,
+      };
+      const { data, error } = await sb.from("menu_items").insert(payload).select().single();
       if (error) throw error;
       res.json(data);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
@@ -1100,9 +1125,58 @@ ${contextualData}
   app.patch("/api/menu/:id", async (req, res) => {
     try {
       const sb = getSupabaseDataClient();
+      const itemId = parseInt(req.params.id);
+      if (Number.isNaN(itemId)) return res.status(400).json({ error: "Invalid menu item ID." });
+
+      const { data: current, error: currentErr } = await sb
+        .from("menu_items").select("*").eq("id", itemId).maybeSingle();
+      if (currentErr) throw currentErr;
+      if (!current) return res.status(404).json({ error: "Menu item not found." });
+
+      const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+
+      if (req.body.name !== undefined) {
+        const name = String(req.body.name).trim();
+        if (!name) return res.status(400).json({ error: "Item name cannot be empty." });
+        updates.name = name;
+      }
+      if (req.body.category !== undefined) {
+        if (!['base', 'pizza', 'topping'].includes(req.body.category)) {
+          return res.status(400).json({ error: "Category must be base, pizza, or topping." });
+        }
+        updates.category = req.body.category;
+      }
+      if (req.body.price_inr !== undefined) {
+        const price = Number(req.body.price_inr);
+        if (!Number.isFinite(price) || price <= 0 || price > 10000) {
+          return res.status(400).json({ error: "Price must be between 1 and 10,000 INR." });
+        }
+        updates.price_inr = price;
+      }
+      if (req.body.description !== undefined) {
+        updates.description = req.body.description?.trim() || null;
+      }
+      if (req.body.is_active !== undefined) {
+        updates.is_active = Boolean(req.body.is_active);
+      }
+      if (req.body.currency !== undefined) {
+        updates.currency = String(req.body.currency).trim().toUpperCase();
+      }
+
+      const nextName = String(updates.name ?? current.name);
+      const nextCategory = String(updates.category ?? current.category);
+      const { data: allMenu } = await sb.from("menu_items").select("id, name, code, category");
+      const nameConflict = checkMenuNameConflict(allMenu || [], {
+        id: itemId,
+        name: nextName,
+        code: current.code,
+        category: nextCategory,
+      });
+      if (nameConflict) return res.status(409).json({ error: nameConflict });
+
       const { data, error } = await sb.from("menu_items")
-        .update({ ...req.body, updated_at: new Date().toISOString() })
-        .eq("id", req.params.id).select().single();
+        .update(updates)
+        .eq("id", itemId).select().single();
       if (error) throw error;
       res.json(data);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
@@ -1313,15 +1387,14 @@ ${contextualData}
       const { staffId, analyticsSnapshot } = req.body || {};
       await assertAdminProfile(String(staffId || ""));
 
-      if (!process.env.GEMINI_API_KEY) {
-        return res.json({ recommendations: [], aiAvailable: false, message: "Gemini API key not configured." });
+      if (!isAiConfigured()) {
+        return res.json({ recommendations: [], aiAvailable: false, message: aiNotConfiguredMessage() });
       }
 
       if (!analyticsSnapshot || typeof analyticsSnapshot !== "object") {
         return res.status(400).json({ error: "analyticsSnapshot is required." });
       }
 
-      const ai = createGeminiClient();
       const snapshotJson = JSON.stringify(analyticsSnapshot, null, 0);
 
       const systemInstruction = `You are a restaurant operations analyst for Slice of Heaven Pizzeria (India, INR, dine-in pizza).
@@ -1359,17 +1432,13 @@ Rules:
 - Use Indian context (IST, ₹, local dining habits).
 - If data is sparse, say so in detail and lower priority.`;
 
-      const response = await ai.models.generateContent({
-        model: CHAT_MODEL,
-        contents: `Analytics snapshot:\n${snapshotJson}\n\nGenerate recommendations JSON:`,
-        config: {
-          systemInstruction,
-          temperature: 0.35,
-        },
+      const raw = await generateAiText({
+        systemInstruction,
+        userContent: `Analytics snapshot:\n${snapshotJson}\n\nGenerate recommendations JSON:`,
+        temperature: 0.35,
       });
 
       let parsed: unknown = null;
-      const raw = (response.text || "").trim();
       try {
         const cleaned = raw.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
         parsed = JSON.parse(cleaned);

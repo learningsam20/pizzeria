@@ -141,3 +141,45 @@ export function readInputDataMenuFileEntry(
 }
 
 export type MenuUpsertPayload = Omit<MenuItem, 'id' | 'created_at' | 'updated_at'>;
+
+export function normalizeMenuItemName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+/** Find same display name reused with different codes within one category. */
+export function findMenuNameConflicts(
+  items: Array<{ name: string; code: string; category: string }>
+): string[] {
+  const groups = new Map<string, { label: string; codes: Set<string> }>();
+  for (const item of items) {
+    const key = `${item.category}::${normalizeMenuItemName(item.name)}`;
+    const code = item.code.trim().toUpperCase();
+    if (!groups.has(key)) {
+      groups.set(key, { label: item.name.trim(), codes: new Set() });
+    }
+    groups.get(key)!.codes.add(code);
+  }
+  const errors: string[] = [];
+  for (const { label, codes } of groups.values()) {
+    if (codes.size > 1) {
+      errors.push(`"${label}" appears with multiple codes: ${[...codes].join(', ')}`);
+    }
+  }
+  return errors;
+}
+
+export function checkMenuNameConflict(
+  existing: Array<{ id?: number; name: string; code: string; category: string }>,
+  candidate: { name: string; code: string; category: string; id?: number }
+): string | null {
+  const norm = normalizeMenuItemName(candidate.name);
+  const code = candidate.code.trim().toUpperCase();
+  for (const item of existing) {
+    if (candidate.id != null && item.id === candidate.id) continue;
+    if (item.category !== candidate.category) continue;
+    if (normalizeMenuItemName(item.name) === norm && item.code.trim().toUpperCase() !== code) {
+      return `"${candidate.name.trim()}" already exists as code ${item.code}. Each name must map to one code per category.`;
+    }
+  }
+  return null;
+}

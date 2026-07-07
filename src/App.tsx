@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Pizza, ChefHat, ShieldAlert, Bot, RefreshCw, Key, LogIn, LogOut, CheckCircle, Flame, ShieldCheck, SlidersHorizontal, AlertTriangle, BookOpen
+  Pizza, ChefHat, ShieldAlert, Bot, RefreshCw, Key, LogIn, LogOut, CheckCircle, Flame, ShieldCheck, SlidersHorizontal, AlertTriangle, BookOpen, Sun, Moon
 } from 'lucide-react';
 import { setSupabaseInstance, getSupabase } from './lib/supabaseClient';
 import { dbService } from './lib/dbService';
@@ -13,6 +13,7 @@ import StaffDashboard from './components/StaffDashboard';
 import AdminDashboard from './components/AdminDashboard';
 import Chatbot from './components/Chatbot';
 import AppHelp from './components/AppHelp';
+import { useTheme } from './hooks/useTheme';
 
 export default function App() {
   // Global States
@@ -340,6 +341,7 @@ export default function App() {
   const canAccessStaffTabs = Boolean(staffSession && (staffSession.role === 'staff' || staffSession.role === 'admin'));
   const canAccessAdminTab = Boolean(staffSession && staffSession.role === 'admin');
   const canAccessChatbotTab = Boolean(staffSession);
+  const { toggleTheme, isDark } = useTheme();
 
   return (
     <div className="min-h-screen bg-noir-bg flex flex-col font-sans text-noir-text" id="main-app-viewport">
@@ -428,6 +430,15 @@ export default function App() {
 
           {/* Sync action / profile status */}
           <div className="flex items-center space-x-3 text-xs">
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="p-2 bg-noir-highlight hover:bg-noir-sidebar rounded-lg text-noir-muted hover:text-noir-gold border border-noir-border cursor-pointer transition-colors"
+              title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+              aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+            </button>
             <button
               onClick={fetchActiveData}
               className="p-2 bg-noir-highlight hover:bg-noir-sidebar rounded-lg text-noir-muted hover:text-noir-text border border-noir-border cursor-pointer transition-colors"
@@ -647,12 +658,14 @@ export default function App() {
       </main>
 
       {/* 3. Global footer */}
-      <footer className="bg-black border-t border-noir-border py-6 mt-12 text-center" id="global-footer">
+      <footer className="bg-noir-footer border-t border-noir-border py-6 mt-12 text-center" id="global-footer">
         <div className="max-w-7xl mx-auto px-4 text-xs text-noir-dim space-y-1.5 font-mono">
           <p>© 2026 Slice of Heaven Pizzeria Ltd. All rights reserved.</p>
           <p className="text-[10px] tracking-wider">
             Service status: {supabaseConnected ? '⚡ Cloud connected' : '💾 Offline demo mode'}
-            {config.hasGemini ? ' • 💬 Support chat available' : ' • ⚠️ Support chat unavailable'}
+            {(config.hasAi ?? config.hasGemini)
+              ? ` • 💬 AI assistant (${config.aiProvider || 'configured'}${config.aiModel ? `: ${config.aiModel}` : ''})`
+              : ' • ⚠️ AI assistant unavailable'}
           </p>
         </div>
       </footer>
