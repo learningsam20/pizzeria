@@ -18,6 +18,7 @@ import { buildAdminRecommendations, buildRecommendationAnalytics, mergeRecommend
 import type { AdminRecommendation, RecommendationCategory } from '../lib/adminRecommendations';
 import { filterOrdersForSearch, formatOrdersExportDocument } from '../lib/orderFormat';
 import OrderCombosDisplay from './OrderCombosDisplay';
+import ActiveToggle from './ActiveToggle';
 
 interface AdminDashboardProps {
   orders: OrderWithItems[];
@@ -109,6 +110,8 @@ export default function AdminDashboard({
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [menuReloading, setMenuReloading] = useState(false);
   const [menuToggleId, setMenuToggleId] = useState<number | null>(null);
+  const [profileToggleId, setProfileToggleId] = useState<string | null>(null);
+  const [profileDeleteId, setProfileDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     setSettingsDiscount(String(appSettings.bulk_discount_percent));
@@ -241,6 +244,18 @@ export default function AdminDashboard({
     menuItems.map(m => ({ name: m.name, code: m.code, category: m.category }))
   );
 
+  const staffOrderCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const order of orders) {
+      if (order.staff_id) {
+        counts.set(order.staff_id, (counts.get(order.staff_id) || 0) + 1);
+      }
+    }
+    return counts;
+  }, [orders]);
+
+  const isProfileActive = (profile: Profile) => profile.is_active !== false;
+
   const handleToggleMenuActive = async (item: MenuItem) => {
     setMenuToggleId(item.id);
     setStatusMsg(null);
@@ -255,6 +270,52 @@ export default function AdminDashboard({
       setStatusMsg({ type: 'error', text: err.message || 'Could not update menu item.' });
     } finally {
       setMenuToggleId(null);
+    }
+  };
+
+  const handleToggleProfileActive = async (profile: Profile) => {
+    if (!currentStaffId) return;
+    setProfileToggleId(profile.id);
+    setStatusMsg(null);
+    try {
+      const nextActive = !isProfileActive(profile);
+      await dbService.updateProfile(profile.id, { is_active: nextActive }, currentStaffId);
+      setStatusMsg({
+        type: 'success',
+        text: `${profile.display_name || profile.email} is now ${nextActive ? 'active' : 'inactive'}.`,
+      });
+      onRefresh();
+    } catch (err: any) {
+      setStatusMsg({ type: 'error', text: err.message || 'Could not update user status.' });
+    } finally {
+      setProfileToggleId(null);
+    }
+  };
+
+  const handleDeleteProfile = async (profile: Profile) => {
+    if (!currentStaffId) return;
+    const orderCount = staffOrderCounts.get(profile.id) || 0;
+    if (orderCount > 0) {
+      setStatusMsg({
+        type: 'error',
+        text: `Cannot delete ${profile.email} — linked to ${orderCount} order(s). Deactivate instead.`,
+      });
+      return;
+    }
+    if (!window.confirm(`Delete ${profile.email}? This permanently removes their login and cannot be undone.`)) {
+      return;
+    }
+
+    setProfileDeleteId(profile.id);
+    setStatusMsg(null);
+    try {
+      await dbService.deleteProfile(profile.id, currentStaffId);
+      setStatusMsg({ type: 'success', text: `Deleted user ${profile.email}.` });
+      onRefresh();
+    } catch (err: any) {
+      setStatusMsg({ type: 'error', text: err.message || 'Could not delete user.' });
+    } finally {
+      setProfileDeleteId(null);
     }
   };
 
@@ -388,6 +449,10 @@ export default function AdminDashboard({
         };
 
         if (custExistingId) {
+          const existingByPhone = await dbService.findCustomerByPhone(trimmedPhone);
+          if (existingByPhone && existingByPhone.id !== custExistingId) {
+            throw new Error(`Mobile number ${trimmedPhone} is already registered to ${existingByPhone.name}.`);
+          }
           await dbService.updateCustomer(custExistingId, payload);
           setStatusMsg({ type: 'success', text: `Updated customer ${payload.name}.` });
         } else {
@@ -747,6 +812,7 @@ export default function AdminDashboard({
           <p className="font-semibold text-purple-200">User Management</p>
           <p>Add staff or admin accounts by email. Login instructions are emailed to the user only — admins never see the temporary password.</p>
           <p>Every new user must set a new password on first login. The first admin account must be set up by your system administrator before using User Management here.</p>
+          <p>Use the toggle to deactivate staff who should not sign in. Delete is only available when the user has no linked orders.</p>
         </div>
       )}
 
@@ -1616,18 +1682,17 @@ export default function AdminDashboard({
                       <td className="py-2.5 font-mono font-bold text-noir-text">₹{m.price_inr}</td>
                       <td className="py-2.5 text-noir-muted italic max-w-xs truncate" title={m.description || ''}>{m.description || 'No description added'}</td>
                       <td className="py-2.5 text-right">
-                        <button
-                          type="button"
-                          disabled={menuToggleId === m.id}
-                          onClick={() => handleToggleMenuActive(m)}
-                          className={`text-[10px] font-medium px-2 py-0.5 rounded border cursor-pointer disabled:opacity-50 ${
-                            m.is_active
-                              ? 'bg-emerald-950/40 text-emerald-300 border-emerald-900/40 hover:bg-emerald-900/30'
-                              : 'bg-noir-highlight text-noir-dim border-noir-border hover:text-noir-text'
-                          }`}
-                        >
-                          {menuToggleId === m.id ? '…' : m.is_active ? 'Active · Deactivate' : 'Inactive · Activate'}
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <ActiveToggle
+                            active={m.is_active}
+                            busy={menuToggleId === m.id}
+                            onToggle={() => handleToggleMenuActive(m)}
+                            label={`${m.name} menu item`}
+                          />
+                          <span className={`text-[10px] font-medium min-w-[4.5rem] text-right ${m.is_active ? 'text-emerald-400' : 'text-noir-dim'}`}>
+                            {menuToggleId === m.id ? '…' : m.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -2102,7 +2167,9 @@ export default function AdminDashboard({
                   <th className="py-2.5">Display Name</th>
                   <th className="py-2.5">Login Email</th>
                   <th className="py-2.5">Role</th>
+                  <th className="py-2.5 text-center">Status</th>
                   <th className="py-2.5 text-right">Created At</th>
+                  <th className="py-2.5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-noir-border text-noir-text">
@@ -2111,8 +2178,12 @@ export default function AdminDashboard({
                     p.email.toLowerCase().includes(profileSearch.toLowerCase()) || 
                     (p.display_name && p.display_name.toLowerCase().includes(profileSearch.toLowerCase()))
                   )
-                  .map(p => (
-                    <tr key={p.id} className="hover:bg-noir-highlight/20 transition-colors">
+                  .map(p => {
+                    const orderCount = staffOrderCounts.get(p.id) || 0;
+                    const active = isProfileActive(p);
+                    const isSelf = p.id === currentStaffId;
+                    return (
+                    <tr key={p.id} className={`hover:bg-noir-highlight/20 transition-colors ${!active ? 'opacity-60' : ''}`}>
                       <td className="py-2.5 font-mono text-noir-dim text-[10px]" title={p.id}>{p.id.slice(0, 18)}...</td>
                       <td className="py-2.5 font-bold text-noir-text">{p.display_name || 'No display name'}</td>
                       <td className="py-2.5 font-mono text-noir-muted">{p.email}</td>
@@ -2125,9 +2196,42 @@ export default function AdminDashboard({
                           {p.role}
                         </span>
                       </td>
+                      <td className="py-2.5">
+                        <div className="flex items-center justify-center gap-2">
+                          <ActiveToggle
+                            active={active}
+                            busy={profileToggleId === p.id}
+                            disabled={isSelf && active}
+                            onToggle={() => handleToggleProfileActive(p)}
+                            label={`${p.email} account`}
+                          />
+                          <span className={`text-[10px] font-medium min-w-[4rem] ${active ? 'text-emerald-400' : 'text-noir-dim'}`}>
+                            {profileToggleId === p.id ? '…' : active ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
+                      </td>
                       <td className="py-2.5 text-right text-noir-dim font-mono">{new Date(p.created_at).toLocaleDateString()}</td>
+                      <td className="py-2.5 text-right">
+                        <button
+                          type="button"
+                          disabled={profileDeleteId === p.id || isSelf || orderCount > 0}
+                          onClick={() => handleDeleteProfile(p)}
+                          title={
+                            isSelf
+                              ? 'You cannot delete your own account'
+                              : orderCount > 0
+                                ? `Linked to ${orderCount} order(s) — deactivate instead`
+                                : 'Delete user permanently'
+                          }
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded border border-red-900/40 text-red-400 hover:bg-red-950/30 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer text-[10px] font-medium"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          {profileDeleteId === p.id ? '…' : 'Delete'}
+                        </button>
+                      </td>
                     </tr>
-                  ))}
+                    );
+                  })}
               </tbody>
             </table>
           </div>

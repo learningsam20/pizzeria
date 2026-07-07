@@ -42,10 +42,17 @@ export const dbService = {
     });
   },
 
-  async updateProfile(id: string, updates: Partial<Profile>): Promise<Profile> {
+  async updateProfile(id: string, updates: Partial<Profile>, staffId?: string | null): Promise<Profile> {
     return api<Profile>(`/api/profiles/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify(updates),
+      body: JSON.stringify({ ...updates, staffId: staffId || undefined }),
+    });
+  },
+
+  async deleteProfile(id: string, staffId: string): Promise<{ success: boolean }> {
+    return api<{ success: boolean }>(`/api/profiles/${id}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ staffId }),
     });
   },
 

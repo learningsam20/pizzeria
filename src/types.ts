@@ -7,6 +7,7 @@ export interface Profile {
   email: string;
   display_name: string | null;
   role: 'staff' | 'admin';
+  is_active: boolean;
   created_at: string;
   updated_at: string;
 }

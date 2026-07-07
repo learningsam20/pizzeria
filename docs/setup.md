@@ -84,7 +84,9 @@ The **first admin** cannot be created from the app UI. Create them once in:
 
 **Supabase Dashboard → Authentication → Users**
 
-Link the user to `profiles` with `role = admin`. After that, all other staff and admins are invited from **Admin → User Management**.
+Link the user to `profiles` with `role = admin` and `is_active = true`. After that, all other staff and admins are invited from **Admin → User Management**.
+
+Run `docs/migrations/002_staff_active_and_customer_phone.sql` in the Supabase SQL editor if staff deactivate or unique customer phone checks fail (missing column/index).
 
 ---
 

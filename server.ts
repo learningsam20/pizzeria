@@ -477,6 +477,7 @@ async function initializeServer() {
           email: normalizedEmail,
           display_name: displayName || null,
           role: normalizedRole,
+          is_active: true,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }, { onConflict: "id" });
@@ -867,9 +868,32 @@ ${contextualData}
   async function assertAdminProfile(staffId: string) {
     if (!staffId) throw new Error("Admin staff id is required.");
     const sb = getSupabaseDataClient();
-    const { data, error } = await sb.from("profiles").select("role").eq("id", staffId).maybeSingle();
+    const { data, error } = await sb.from("profiles").select("role, is_active").eq("id", staffId).maybeSingle();
     if (error) throw error;
     if (!data || data.role !== "admin") throw new Error("Admin access required.");
+    if (data.is_active === false) throw new Error("Admin access required.");
+  }
+
+  async function assertUniqueCustomerPhone(
+    sb: ReturnType<typeof getSupabaseDataClient>,
+    phone: string,
+    excludeId?: number
+  ) {
+    const trimmed = String(phone).trim();
+    const { data, error } = await sb.from("customers").select("id, name").eq("phone", trimmed).maybeSingle();
+    if (error) throw error;
+    if (data && data.id !== excludeId) {
+      throw new Error(`Mobile number ${trimmed} is already registered to ${data.name}.`);
+    }
+  }
+
+  function mapCustomerDbError(err: any, phone?: string): string {
+    if (err?.code === "23505" && /phone/i.test(String(err.message || err.details || ""))) {
+      return phone
+        ? `Mobile number ${phone} is already registered to another customer.`
+        : "This mobile number is already registered to another customer.";
+    }
+    return err?.message || "Customer save failed.";
   }
 
   async function loadAppSettingsFromDb(): Promise<AppSettings> {
@@ -1297,10 +1321,17 @@ ${contextualData}
         delivery_address: req.body.delivery_address?.trim() || null,
       };
 
+      await assertUniqueCustomerPhone(sb, payload.phone);
+
       const { data, error } = await sb.from("customers").insert(payload).select().single();
       if (error) throw error;
       res.json(data);
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) {
+      const phone = String(req.body?.phone || "").trim();
+      const msg = mapCustomerDbError(e, phone);
+      const status = /already registered/i.test(msg) ? 409 : 500;
+      res.status(status).json({ error: msg });
+    }
   });
 
   app.patch("/api/customers/:id", async (req, res) => {
@@ -1330,6 +1361,11 @@ ${contextualData}
         updates.delivery_address = req.body.delivery_address?.trim() || null;
       }
 
+      const customerId = Number(req.params.id);
+      if (updates.phone !== undefined) {
+        await assertUniqueCustomerPhone(sb, String(updates.phone), customerId);
+      }
+
       const { data, error } = await sb.from("customers")
         .update(updates)
         .eq("id", req.params.id)
@@ -1337,7 +1373,12 @@ ${contextualData}
         .single();
       if (error) throw error;
       res.json(data);
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) {
+      const phone = req.body?.phone != null ? String(req.body.phone).trim() : undefined;
+      const msg = mapCustomerDbError(e, phone);
+      const status = /already registered/i.test(msg) ? 409 : 500;
+      res.status(status).json({ error: msg });
+    }
   });
 
   // Orders
@@ -1688,13 +1729,88 @@ Rules:
 
   app.patch("/api/profiles/:id", async (req, res) => {
     try {
+      const { staffId, is_active, display_name, role } = req.body || {};
+      await assertAdminProfile(String(staffId || ""));
+
+      const targetId = String(req.params.id);
+      const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+
+      if (is_active !== undefined) updates.is_active = Boolean(is_active);
+      if (display_name !== undefined) updates.display_name = display_name?.trim() || null;
+      if (role !== undefined) updates.role = role === "admin" ? "admin" : "staff";
+
+      if (Object.keys(updates).length === 1) {
+        return res.status(400).json({ error: "No valid fields to update." });
+      }
+
       const sb = getSupabaseDataClient();
+
+      if (is_active === false) {
+        const { data: target, error: targetErr } = await sb
+          .from("profiles")
+          .select("role, is_active")
+          .eq("id", targetId)
+          .maybeSingle();
+        if (targetErr) throw targetErr;
+        if (target?.role === "admin") {
+          const { data: activeAdmins, error: adminErr } = await sb
+            .from("profiles")
+            .select("id")
+            .eq("role", "admin")
+            .eq("is_active", true);
+          if (adminErr) throw adminErr;
+          const others = (activeAdmins || []).filter((a: { id: string }) => a.id !== targetId);
+          if (others.length === 0) {
+            return res.status(400).json({ error: "Cannot deactivate the last active admin account." });
+          }
+        }
+      }
+
       const { data, error } = await sb.from("profiles")
-        .update({ ...req.body, updated_at: new Date().toISOString() })
-        .eq("id", req.params.id).select().single();
+        .update(updates)
+        .eq("id", targetId)
+        .select()
+        .single();
       if (error) throw error;
       res.json(data);
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) {
+      res.status(e.message === "Admin access required." ? 403 : 500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/profiles/:id", async (req, res) => {
+    try {
+      const staffId = String(req.body?.staffId || req.query.staffId || "");
+      await assertAdminProfile(staffId);
+
+      const targetId = String(req.params.id);
+      if (targetId === staffId) {
+        return res.status(400).json({ error: "You cannot delete your own account while signed in." });
+      }
+
+      const sb = getSupabaseDataClient();
+      const { count, error: countErr } = await sb
+        .from("orders")
+        .select("id", { count: "exact", head: true })
+        .eq("staff_id", targetId);
+      if (countErr) throw countErr;
+      if ((count || 0) > 0) {
+        return res.status(409).json({
+          error: `This user is linked to ${count} order(s) and cannot be deleted. Deactivate the account instead.`,
+        });
+      }
+
+      const supabaseAdmin = getSupabaseAdminClient();
+      const { error: authErr } = await supabaseAdmin.auth.admin.deleteUser(targetId);
+      if (authErr) throw authErr;
+
+      const { error: profileErr } = await sb.from("profiles").delete().eq("id", targetId);
+      if (profileErr) throw profileErr;
+
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(e.message === "Admin access required." ? 403 : 500).json({ error: e.message });
+    }
   });
 
   // ── END DATA APIs ────────────────────────────────────────────────────────

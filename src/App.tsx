@@ -113,6 +113,9 @@ export default function App() {
 
     if (error) throw error;
     if (!data) throw new Error('No staff profile exists for this account.');
+    if (data.is_active === false) {
+      throw new Error('This account has been deactivated. Contact your administrator.');
+    }
     if (data.role !== 'staff' && data.role !== 'admin') {
       throw new Error('This account does not have staff access.');
     }
@@ -266,6 +269,7 @@ export default function App() {
       setPasswordChangeRequiredFor(null);
       await fetchActiveData();
     } catch (err: any) {
+      await supabase.auth.signOut().catch(() => {});
       setStaffSession(null);
       setAuthError(getAuthErrorMessage(err));
     } finally {
