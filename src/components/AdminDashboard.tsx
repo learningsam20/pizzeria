@@ -12,7 +12,7 @@ import {
 } from 'recharts';
 import { MenuItem, Profile, Customer, OrderWithItems, OrderItem, DineInTable, AppSettings, MenuLoadStatus } from '../types';
 import { parseMenuFileRow, validatePhone, validateEmail } from '../lib/inputValidation';
-import { checkMenuNameConflict, findMenuNameConflicts } from '../lib/menuImport';
+import { checkMenuNameConflict, findMenuNameConflicts } from '../lib/menuImportUtils';
 import { dbService } from '../lib/dbService';
 import { buildAdminRecommendations, buildRecommendationAnalytics, mergeRecommendations, CATEGORY_LABELS, IMPACT_LABELS } from '../lib/adminRecommendations';
 import type { AdminRecommendation, RecommendationCategory } from '../lib/adminRecommendations';

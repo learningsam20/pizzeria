@@ -14,7 +14,7 @@ import {
   validateQuantityInput,
   validateNonEmpty,
 } from '../lib/inputValidation';
-import { findMenuNameConflicts } from '../lib/menuImport';
+import { findMenuNameConflicts } from '../lib/menuImportUtils';
 import BillSummary from './BillSummary';
 import OrderCombosDisplay from './OrderCombosDisplay';
 
