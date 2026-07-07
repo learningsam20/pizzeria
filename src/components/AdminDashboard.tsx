@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   TrendingUp, Users, Pizza, BarChart3, PieChart as PieIcon, Layers, Trash2, 
-  PlusCircle, Upload, ChevronLeft, ChevronRight, FileSpreadsheet, Sparkles, CheckCircle2, AlertTriangle, Play, SlidersHorizontal, RefreshCw, Download, ClipboardList, Lightbulb
+  PlusCircle, Upload, ChevronLeft, ChevronRight, FileSpreadsheet, Sparkles, CheckCircle2, AlertTriangle, Play, SlidersHorizontal, RefreshCw, Download, ClipboardList, Lightbulb, Pencil, Check, X
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
@@ -19,6 +19,7 @@ import type { AdminRecommendation, RecommendationCategory } from '../lib/adminRe
 import { filterOrdersForSearch, formatOrdersExportDocument } from '../lib/orderFormat';
 import OrderCombosDisplay from './OrderCombosDisplay';
 import ActiveToggle from './ActiveToggle';
+import OrderBillModal from './OrderBillModal';
 
 interface AdminDashboardProps {
   orders: OrderWithItems[];
@@ -110,6 +111,10 @@ export default function AdminDashboard({
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [menuReloading, setMenuReloading] = useState(false);
   const [menuToggleId, setMenuToggleId] = useState<number | null>(null);
+  const [menuEditId, setMenuEditId] = useState<number | null>(null);
+  const [menuEditDraft, setMenuEditDraft] = useState({ name: '', price_inr: '', description: '' });
+  const [menuSaveId, setMenuSaveId] = useState<number | null>(null);
+  const [billOrderId, setBillOrderId] = useState<number | null>(null);
   const [profileToggleId, setProfileToggleId] = useState<string | null>(null);
   const [profileDeleteId, setProfileDeleteId] = useState<string | null>(null);
 
@@ -256,6 +261,14 @@ export default function AdminDashboard({
 
   const isProfileActive = (profile: Profile) => profile.is_active !== false;
 
+  const billOrder = billOrderId != null ? orders.find(o => o.id === billOrderId) ?? null : null;
+
+  const categoryBadgeClass = (category: MenuItem['category']) => {
+    if (category === 'pizza') return 'badge-cat-pizza';
+    if (category === 'base') return 'badge-cat-base';
+    return 'badge-cat-topping';
+  };
+
   const handleToggleMenuActive = async (item: MenuItem) => {
     setMenuToggleId(item.id);
     setStatusMsg(null);
@@ -270,6 +283,61 @@ export default function AdminDashboard({
       setStatusMsg({ type: 'error', text: err.message || 'Could not update menu item.' });
     } finally {
       setMenuToggleId(null);
+    }
+  };
+
+  const startMenuEdit = (item: MenuItem) => {
+    setMenuEditId(item.id);
+    setMenuEditDraft({
+      name: item.name,
+      price_inr: String(item.price_inr),
+      description: item.description || '',
+    });
+  };
+
+  const cancelMenuEdit = () => {
+    setMenuEditId(null);
+    setMenuEditDraft({ name: '', price_inr: '', description: '' });
+  };
+
+  const handleSaveMenuEdit = async (item: MenuItem) => {
+    const name = menuEditDraft.name.trim();
+    const priceNum = parseFloat(menuEditDraft.price_inr);
+    if (!name) {
+      setStatusMsg({ type: 'error', text: 'Item name cannot be empty.' });
+      return;
+    }
+    if (!Number.isFinite(priceNum) || priceNum <= 0) {
+      setStatusMsg({ type: 'error', text: 'Price must be a valid number greater than 0.' });
+      return;
+    }
+
+    const nameConflict = checkMenuNameConflict(menuItems, {
+      id: item.id,
+      name,
+      code: item.code,
+      category: item.category,
+    });
+    if (nameConflict) {
+      setStatusMsg({ type: 'error', text: nameConflict });
+      return;
+    }
+
+    setMenuSaveId(item.id);
+    setStatusMsg(null);
+    try {
+      await dbService.updateMenuItem(item.id, {
+        name,
+        price_inr: priceNum,
+        description: menuEditDraft.description.trim() || null,
+      });
+      setStatusMsg({ type: 'success', text: `Updated ${name}.` });
+      cancelMenuEdit();
+      onRefresh();
+    } catch (err: any) {
+      setStatusMsg({ type: 'error', text: err.message || 'Could not save menu item.' });
+    } finally {
+      setMenuSaveId(null);
     }
   };
 
@@ -1168,7 +1236,7 @@ export default function AdminDashboard({
                 onClick={() => { setShowBulkUpload(!showBulkUpload); setShowAddForm(false); }}
                 className="px-3.5 py-1.5 bg-noir-highlight hover:bg-noir-sidebar text-noir-text rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer border border-noir-border"
               >
-                <Upload className="w-4 h-4 text-noir-gold" /> Bulk Upload (CSV/JSON)
+                <Upload className="w-4 h-4 icon-noir" /> Bulk Upload (CSV/JSON)
               </button>
             </div>
           </div>
@@ -1424,7 +1492,7 @@ export default function AdminDashboard({
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div>
               <h3 className="text-lg font-serif italic text-noir-gold">Pizza & Menu</h3>
-              <p className="text-xs text-noir-muted">Manage pizza recipes, crust bases, and toppings. Deactivate items to hide them from customer ordering.</p>
+              <p className="text-xs text-noir-muted">Manage pizza recipes, crust bases, and toppings. Click the pencil to edit name, price, or description.</p>
               <p className="text-[10px] text-noir-dim mt-1">
                 On server startup, menu import files (bases, pizzas, toppings) are loaded automatically.
               </p>
@@ -1437,20 +1505,20 @@ export default function AdminDashboard({
                 disabled={menuReloading}
                 className="px-3.5 py-1.5 bg-noir-highlight hover:bg-noir-sidebar text-noir-text rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer border border-noir-border disabled:opacity-50"
               >
-                <RefreshCw className={`w-4 h-4 text-noir-gold ${menuReloading ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-4 h-4 icon-noir ${menuReloading ? 'animate-spin' : ''}`} />
                 Reload menu import
               </button>
               <button
                 onClick={() => { setShowAddForm(!showAddForm); setShowBulkUpload(false); }}
                 className="px-3.5 py-1.5 bg-noir-gold hover:bg-noir-gold-hover text-black rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
               >
-                <PlusCircle className="w-4 h-4" /> Add Menu Item
+                <PlusCircle className="w-4 h-4 icon-noir" /> Add Menu Item
               </button>
               <button
                 onClick={() => { setShowBulkUpload(!showBulkUpload); setShowAddForm(false); }}
                 className="px-3.5 py-1.5 bg-noir-highlight hover:bg-noir-sidebar text-noir-text rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer border border-noir-border"
               >
-                <Upload className="w-4 h-4 text-noir-gold" /> Bulk Upload (CSV/JSON)
+                <Upload className="w-4 h-4 icon-noir" /> Bulk Upload (CSV/JSON)
               </button>
             </div>
           </div>
@@ -1649,13 +1717,13 @@ export default function AdminDashboard({
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="border-b border-noir-border text-noir-dim uppercase font-mono">
+                <tr className="border-b border-noir-border text-noir-dim uppercase font-mono text-[10px]">
                   <th className="py-2.5">Code</th>
                   <th className="py-2.5">Category</th>
                   <th className="py-2.5">Name</th>
                   <th className="py-2.5">Base Price</th>
                   <th className="py-2.5">Description</th>
-                  <th className="py-2.5 text-right">Status</th>
+                  <th className="py-2.5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-noir-border text-noir-text">
@@ -1664,38 +1732,98 @@ export default function AdminDashboard({
                     m.name.toLowerCase().includes(menuSearch.toLowerCase()) || 
                     m.code.toLowerCase().includes(menuSearch.toLowerCase())
                   )
-                  .map(m => (
-                    <tr key={m.id} className={`hover:bg-noir-highlight/20 transition-colors ${!m.is_active ? 'opacity-50' : ''}`}>
+                  .map(m => {
+                    const isEditing = menuEditId === m.id;
+                    return (
+                    <tr key={m.id} className={`hover:bg-noir-highlight/20 transition-colors ${!m.is_active ? 'opacity-55' : ''}`}>
                       <td className="py-2.5 font-mono font-bold text-noir-gold uppercase">{m.code}</td>
                       <td className="py-2.5">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
-                          m.category === 'pizza' 
-                            ? 'bg-red-950/40 text-red-300 border-red-900/40' 
-                            : m.category === 'base'
-                            ? 'bg-amber-950/40 text-amber-300 border-amber-900/40'
-                            : 'bg-emerald-950/40 text-emerald-300 border-emerald-900/40'
-                        }`}>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${categoryBadgeClass(m.category)}`}>
                           {m.category}
                         </span>
                       </td>
-                      <td className="py-2.5 font-semibold text-noir-text">{m.name}</td>
-                      <td className="py-2.5 font-mono font-bold text-noir-text">₹{m.price_inr}</td>
-                      <td className="py-2.5 text-noir-muted italic max-w-xs truncate" title={m.description || ''}>{m.description || 'No description added'}</td>
+                      <td className="py-2.5 font-semibold text-noir-text min-w-[140px]">
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={menuEditDraft.name}
+                            onChange={e => setMenuEditDraft(d => ({ ...d, name: e.target.value }))}
+                            className="menu-edit-input font-semibold"
+                            aria-label={`Edit name for ${m.code}`}
+                          />
+                        ) : m.name}
+                      </td>
+                      <td className="py-2.5 font-mono font-bold text-noir-text min-w-[90px]">
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={menuEditDraft.price_inr}
+                            onChange={e => setMenuEditDraft(d => ({ ...d, price_inr: e.target.value }))}
+                            className="menu-edit-input font-mono"
+                            aria-label={`Edit price for ${m.code}`}
+                          />
+                        ) : `₹${m.price_inr}`}
+                      </td>
+                      <td className="py-2.5 text-noir-muted min-w-[180px] max-w-xs">
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={menuEditDraft.description}
+                            onChange={e => setMenuEditDraft(d => ({ ...d, description: e.target.value }))}
+                            placeholder="Optional description"
+                            className="menu-edit-input italic"
+                            aria-label={`Edit description for ${m.code}`}
+                          />
+                        ) : (
+                          <span className="italic truncate block" title={m.description || ''}>{m.description || '—'}</span>
+                        )}
+                      </td>
                       <td className="py-2.5 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          {isEditing ? (
+                            <>
+                              <button
+                                type="button"
+                                disabled={menuSaveId === m.id}
+                                onClick={() => handleSaveMenuEdit(m)}
+                                className="p-1.5 rounded-lg border border-noir-success-border bg-[var(--noir-success-bg)] text-noir-success hover:opacity-90 cursor-pointer disabled:opacity-50"
+                                title="Save changes"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={menuSaveId === m.id}
+                                onClick={cancelMenuEdit}
+                                className="p-1.5 rounded-lg border border-noir-border bg-noir-panel text-noir-muted hover:text-noir-text cursor-pointer disabled:opacity-50"
+                                title="Cancel editing"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => startMenuEdit(m)}
+                              className="p-1.5 rounded-lg border border-noir-border bg-noir-panel text-noir-muted hover:text-noir-icon cursor-pointer"
+                              title="Edit name, price, description"
+                            >
+                              <Pencil className="w-3.5 h-3.5 icon-noir-muted" />
+                            </button>
+                          )}
                           <ActiveToggle
                             active={m.is_active}
                             busy={menuToggleId === m.id}
                             onToggle={() => handleToggleMenuActive(m)}
                             label={`${m.name} menu item`}
                           />
-                          <span className={`text-[10px] font-medium min-w-[4.5rem] text-right ${m.is_active ? 'text-emerald-400' : 'text-noir-dim'}`}>
-                            {menuToggleId === m.id ? '…' : m.is_active ? 'Active' : 'Inactive'}
-                          </span>
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
               </tbody>
             </table>
           </div>
@@ -1707,10 +1835,10 @@ export default function AdminDashboard({
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <h3 className="text-lg font-serif italic text-noir-gold flex items-center gap-2">
-                <ClipboardList className="w-5 h-5" /> All Orders
+                <ClipboardList className="w-5 h-5 icon-noir" /> All Orders
               </h3>
               <p className="text-xs text-noir-muted mt-1">
-                Search orders and export formatted text reports (same layout as order_log.txt).
+                Search orders, click an order ID for bill details, or export formatted text reports.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -1720,7 +1848,7 @@ export default function AdminDashboard({
                 onClick={() => exportOrdersText('filtered')}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border border-noir-border bg-noir-panel text-noir-text hover:border-noir-gold-o20 disabled:opacity-50 cursor-pointer"
               >
-                <Download className="w-4 h-4" />
+                <Download className="w-4 h-4 icon-noir" />
                 Export filtered
               </button>
               <button
@@ -1778,7 +1906,16 @@ export default function AdminDashboard({
               <tbody className="divide-y divide-noir-border">
                 {filteredAdminOrders.length ? filteredAdminOrders.map(o => (
                   <tr key={o.id} className="hover:bg-noir-highlight/30 align-top">
-                    <td className="px-4 py-3 font-mono font-bold text-noir-gold">#{o.id}</td>
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => setBillOrderId(o.id)}
+                        className="font-mono font-bold text-noir-gold hover:text-noir-gold-hover underline-offset-2 hover:underline cursor-pointer"
+                        title="View bill details"
+                      >
+                        #{o.id}
+                      </button>
+                    </td>
                     <td className="px-4 py-3">
                       <p className="font-semibold text-noir-text">{o.customer_name || 'Guest'}</p>
                       <p className="text-[10px] text-noir-dim font-mono">{o.customer_phone || '—'}</p>
@@ -2167,7 +2304,7 @@ export default function AdminDashboard({
                   <th className="py-2.5">Display Name</th>
                   <th className="py-2.5">Login Email</th>
                   <th className="py-2.5">Role</th>
-                  <th className="py-2.5 text-center">Status</th>
+                  <th className="py-2.5 text-center w-16" aria-label="Active" />
                   <th className="py-2.5 text-right">Created At</th>
                   <th className="py-2.5 text-right">Actions</th>
                 </tr>
@@ -2189,15 +2326,13 @@ export default function AdminDashboard({
                       <td className="py-2.5 font-mono text-noir-muted">{p.email}</td>
                       <td className="py-2.5">
                         <span className={`px-2.5 py-0.5 rounded text-[10px] font-semibold border ${
-                          p.role === 'admin' 
-                            ? 'bg-purple-950/40 text-purple-300 border-purple-900/40 font-bold' 
-                            : 'bg-indigo-950/40 text-indigo-300 border-indigo-900/40'
+                          p.role === 'admin' ? 'badge-role-admin font-bold' : 'badge-role-staff'
                         }`}>
                           {p.role}
                         </span>
                       </td>
                       <td className="py-2.5">
-                        <div className="flex items-center justify-center gap-2">
+                        <div className="flex items-center justify-center">
                           <ActiveToggle
                             active={active}
                             busy={profileToggleId === p.id}
@@ -2205,9 +2340,6 @@ export default function AdminDashboard({
                             onToggle={() => handleToggleProfileActive(p)}
                             label={`${p.email} account`}
                           />
-                          <span className={`text-[10px] font-medium min-w-[4rem] ${active ? 'text-emerald-400' : 'text-noir-dim'}`}>
-                            {profileToggleId === p.id ? '…' : active ? 'Active' : 'Inactive'}
-                          </span>
                         </div>
                       </td>
                       <td className="py-2.5 text-right text-noir-dim font-mono">{new Date(p.created_at).toLocaleDateString()}</td>
@@ -2223,7 +2355,7 @@ export default function AdminDashboard({
                                 ? `Linked to ${orderCount} order(s) — deactivate instead`
                                 : 'Delete user permanently'
                           }
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded border border-red-900/40 text-red-400 hover:bg-red-950/30 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer text-[10px] font-medium"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded border btn-danger-outline hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer text-[10px] font-medium"
                         >
                           <Trash2 className="w-3 h-3" />
                           {profileDeleteId === p.id ? '…' : 'Delete'}
@@ -2236,6 +2368,14 @@ export default function AdminDashboard({
             </table>
           </div>
         </div>
+      )}
+
+      {billOrder && (
+        <OrderBillModal
+          order={billOrder}
+          currency={appSettings.default_currency}
+          onClose={() => setBillOrderId(null)}
+        />
       )}
     </div>
   );

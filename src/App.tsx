@@ -377,7 +377,7 @@ export default function App() {
                   : 'text-noir-muted hover:text-noir-text hover:bg-noir-highlight/40'
               }`}
             >
-              <Pizza className="w-3.5 h-3.5" /> Dine-In Customer
+              <Pizza className="w-3.5 h-3.5 icon-noir-muted" /> Dine-In Customer
             </button>
 
             {canAccessStaffTabs && (
@@ -389,7 +389,7 @@ export default function App() {
                     : 'text-noir-muted hover:text-noir-text hover:bg-noir-highlight/40'
                 }`}
               >
-                <ChefHat className="w-3.5 h-3.5" /> Staff Kitchen
+                <ChefHat className="w-3.5 h-3.5 icon-noir-muted" /> Staff Kitchen
               </button>
             )}
 
@@ -441,14 +441,14 @@ export default function App() {
               title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
               aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
             >
-              {isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+              {isDark ? <Sun className="w-3.5 h-3.5 icon-noir" /> : <Moon className="w-3.5 h-3.5 icon-noir" />}
             </button>
             <button
               onClick={fetchActiveData}
               className="p-2 bg-noir-highlight hover:bg-noir-sidebar rounded-lg text-noir-muted hover:text-noir-text border border-noir-border cursor-pointer transition-colors"
               title="Sync tables"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
+              <RefreshCw className="w-3.5 h-3.5 icon-noir-muted" />
             </button>
 
             {staffSession ? (

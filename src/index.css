@@ -14,20 +14,45 @@
   --noir-bg: #050505;
   --noir-sidebar: #0a0a0a;
   --noir-card: #0f0f0f;
-  --noir-panel: #080808;
-  --noir-highlight: #1a1a1a;
+  --noir-panel: #121212;
+  --noir-highlight: #1c1c1c;
   --noir-footer: #000000;
-  --noir-gold: #c5a059;
-  --noir-gold-hover: #d4b57a;
-  --noir-text: #e0d8d0;
-  --noir-muted: rgba(224, 216, 208, 0.6);
-  --noir-dim: rgba(224, 216, 208, 0.4);
-  --noir-border: #1f1f1f;
-  --noir-border-light: #333333;
-  --noir-gold-o20: rgba(197, 160, 89, 0.2);
+  --noir-overlay: rgba(0, 0, 0, 0.72);
+  --noir-gold: #d4b57a;
+  --noir-gold-hover: #e8cc98;
+  --noir-text: #ebe4dc;
+  --noir-muted: rgba(235, 228, 220, 0.78);
+  --noir-dim: rgba(235, 228, 220, 0.55);
+  --noir-border: #2a2a2a;
+  --noir-border-light: #3d3d3d;
+  --noir-gold-o20: rgba(212, 181, 122, 0.22);
+  --noir-icon: #d4b57a;
+  --noir-icon-muted: rgba(212, 181, 122, 0.72);
+  --noir-success: #6ee7b7;
+  --noir-success-bg: rgba(16, 185, 129, 0.38);
+  --noir-success-border: rgba(52, 211, 153, 0.45);
+  --noir-toggle-off: #2a2a2a;
+  --noir-danger: #f87171;
+  --noir-danger-bg: rgba(127, 29, 29, 0.35);
+  --noir-danger-border: rgba(248, 113, 113, 0.35);
+  --badge-pizza-bg: rgba(127, 29, 29, 0.42);
+  --badge-pizza-text: #fca5a5;
+  --badge-pizza-border: rgba(185, 28, 28, 0.45);
+  --badge-base-bg: rgba(120, 53, 15, 0.42);
+  --badge-base-text: #fcd34d;
+  --badge-base-border: rgba(180, 83, 9, 0.45);
+  --badge-topping-bg: rgba(6, 78, 59, 0.42);
+  --badge-topping-text: #6ee7b7;
+  --badge-topping-border: rgba(16, 185, 129, 0.45);
+  --badge-admin-bg: rgba(88, 28, 135, 0.42);
+  --badge-admin-text: #d8b4fe;
+  --badge-admin-border: rgba(147, 51, 234, 0.45);
+  --badge-staff-bg: rgba(49, 46, 129, 0.42);
+  --badge-staff-text: #a5b4fc;
+  --badge-staff-border: rgba(99, 102, 241, 0.45);
   --noir-scrollbar-track: #050505;
-  --noir-scrollbar-thumb: #1f1f1f;
-  --noir-scrollbar-thumb-hover: #333333;
+  --noir-scrollbar-thumb: #2a2a2a;
+  --noir-scrollbar-thumb-hover: #3d3d3d;
 }
 
 /* Light theme */
@@ -39,14 +64,39 @@
   --noir-panel: #faf8f5;
   --noir-highlight: #ebe4d8;
   --noir-footer: #e8e2d8;
-  --noir-gold: #9a7328;
-  --noir-gold-hover: #7d5c1a;
-  --noir-text: #1a1612;
-  --noir-muted: rgba(26, 22, 18, 0.62);
-  --noir-dim: rgba(26, 22, 18, 0.42);
-  --noir-border: #ddd5c8;
-  --noir-border-light: #c9bfb0;
-  --noir-gold-o20: rgba(154, 115, 40, 0.22);
+  --noir-overlay: rgba(26, 22, 18, 0.45);
+  --noir-gold: #8a6420;
+  --noir-gold-hover: #6b4e14;
+  --noir-text: #12100e;
+  --noir-muted: rgba(18, 16, 14, 0.74);
+  --noir-dim: rgba(18, 16, 14, 0.52);
+  --noir-border: #d4cbc0;
+  --noir-border-light: #bfb4a6;
+  --noir-gold-o20: rgba(138, 100, 32, 0.18);
+  --noir-icon: #8a6420;
+  --noir-icon-muted: rgba(138, 100, 32, 0.72);
+  --noir-success: #047857;
+  --noir-success-bg: rgba(16, 185, 129, 0.14);
+  --noir-success-border: rgba(5, 150, 105, 0.35);
+  --noir-toggle-off: #d4cbc0;
+  --noir-danger: #b91c1c;
+  --noir-danger-bg: rgba(254, 226, 226, 0.85);
+  --noir-danger-border: rgba(248, 113, 113, 0.45);
+  --badge-pizza-bg: #fee2e2;
+  --badge-pizza-text: #991b1b;
+  --badge-pizza-border: #fecaca;
+  --badge-base-bg: #fef3c7;
+  --badge-base-text: #92400e;
+  --badge-base-border: #fde68a;
+  --badge-topping-bg: #d1fae5;
+  --badge-topping-text: #065f46;
+  --badge-topping-border: #a7f3d0;
+  --badge-admin-bg: #f3e8ff;
+  --badge-admin-text: #6b21a8;
+  --badge-admin-border: #e9d5ff;
+  --badge-staff-bg: #e0e7ff;
+  --badge-staff-text: #3730a3;
+  --badge-staff-border: #c7d2fe;
   --noir-scrollbar-track: #f0ebe3;
   --noir-scrollbar-thumb: #cfc5b6;
   --noir-scrollbar-thumb-hover: #b8ab98;
@@ -56,6 +106,10 @@ body {
   background-color: var(--noir-bg);
   color: var(--noir-text);
   font-family: var(--font-sans);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
@@ -71,6 +125,12 @@ body {
 .text-noir-text { color: var(--noir-text) !important; }
 .text-noir-muted { color: var(--noir-muted) !important; }
 .text-noir-dim { color: var(--noir-dim) !important; }
+.text-noir-icon { color: var(--noir-icon) !important; }
+.text-noir-success { color: var(--noir-success) !important; }
+.text-noir-danger { color: var(--noir-danger) !important; }
+
+.icon-noir { color: var(--noir-icon); }
+.icon-noir-muted { color: var(--noir-icon-muted); }
 
 .border-noir-border { border-color: var(--noir-border) !important; }
 .border-noir-border-light { border-color: var(--noir-border-light) !important; }
@@ -78,6 +138,52 @@ body {
 
 .bg-noir-gold { background-color: var(--noir-gold) !important; }
 .bg-noir-gold-hover:hover { background-color: var(--noir-gold-hover) !important; }
+
+.badge-cat-pizza {
+  background-color: var(--badge-pizza-bg);
+  color: var(--badge-pizza-text);
+  border-color: var(--badge-pizza-border);
+}
+.badge-cat-base {
+  background-color: var(--badge-base-bg);
+  color: var(--badge-base-text);
+  border-color: var(--badge-base-border);
+}
+.badge-cat-topping {
+  background-color: var(--badge-topping-bg);
+  color: var(--badge-topping-text);
+  border-color: var(--badge-topping-border);
+}
+.badge-role-admin {
+  background-color: var(--badge-admin-bg);
+  color: var(--badge-admin-text);
+  border-color: var(--badge-admin-border);
+}
+.badge-role-staff {
+  background-color: var(--badge-staff-bg);
+  color: var(--badge-staff-text);
+  border-color: var(--badge-staff-border);
+}
+
+.btn-danger-outline {
+  color: var(--noir-danger);
+  border-color: var(--noir-danger-border);
+  background-color: var(--noir-danger-bg);
+}
+
+.menu-edit-input {
+  width: 100%;
+  padding: 0.375rem 0.5rem;
+  background-color: var(--noir-panel);
+  border: 1px solid var(--noir-border);
+  border-radius: 0.5rem;
+  color: var(--noir-text);
+  font-size: 0.75rem;
+  outline: none;
+}
+.menu-edit-input:focus {
+  border-color: var(--noir-gold);
+}
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: var(--noir-scrollbar-track); }
