@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { MenuItem, OrderItem, OrderWithItems, DineInTable, Order, tableQrNumber, AppSettings } from '../types';
 import { dbService } from '../lib/dbService';
-import { calcOrderTotals, isActiveOrder } from '../lib/orderUtils';
+import { calcOrderTotals, isActiveOrder, getOrderStaffLabel } from '../lib/orderUtils';
 import { bulkDiscountFooterNote, bulkDiscountLabel, gstLabel } from '../lib/appSettings';
 import {
   validateCustomerName,
@@ -927,6 +927,9 @@ export default function OrderingFlow({ menuItems, appSettings, onOrderPlaced, on
                               'bg-noir-highlight text-noir-muted border-noir-border'}`}>{historyStatusLabel(o.status)}</span>
                           </div>
                           <p className="text-[10px] text-noir-dim mt-1 font-mono">{new Date(o.created_at).toLocaleString()}</p>
+                          <p className="text-[10px] text-noir-muted mt-0.5">
+                            Staff: <span className={o.staff_id ? 'text-noir-text' : 'text-noir-dim italic'}>{getOrderStaffLabel(o)}</span>
+                          </p>
                         </div>
                         <div className="text-right">
                           <p className="text-xs font-bold text-noir-gold">₹{o.total_payable}</p>

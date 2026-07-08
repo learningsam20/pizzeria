@@ -74,6 +74,8 @@ export interface Order {
   order_source: 'staff' | 'customer';
   status: 'confirmed' | 'preparing' | 'ready' | 'ready_to_bill' | 'delivered' | 'cancelled';
   staff_id: string | null; // UUID
+  /** Resolved from profiles when orders are loaded from the API */
+  staff_name?: string | null;
   
   // Analytics Timestamps
   session_started_at: string; // Logs when the customer/staff opened the interface

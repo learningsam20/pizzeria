@@ -105,14 +105,14 @@ export default function App() {
     const supabase = getSupabase();
     if (!supabase) throw new Error('Cloud sign-in is not available.');
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) throw new Error('Not signed in.');
 
-    if (error) throw error;
-    if (!data) throw new Error('No staff profile exists for this account.');
+    const data = await dbService.fetchMyProfile(session.access_token);
+
+    if (data.id !== userId) {
+      throw new Error('Session profile mismatch. Please sign in again.');
+    }
     if (data.is_active === false) {
       throw new Error('This account has been deactivated. Contact your administrator.');
     }
@@ -356,7 +356,11 @@ export default function App() {
           
           {/* Brand Logo Display */}
           <div className="flex items-center space-x-3.5 cursor-pointer" onClick={() => setActiveRole('customer')}>
-            <div className="w-9 h-9 bg-noir-gold rounded-sm rotate-45 flex items-center justify-center text-black shadow-lg transform hover:scale-105 transition-all">
+            <div
+              className="w-9 h-9 bg-noir-gold rounded-sm rotate-45 flex items-center justify-center text-black shadow-lg transform hover:scale-105 transition-all"
+              title="Digital App by SliceMatic"
+              aria-label="Digital App by SliceMatic"
+            >
               <Pizza className="w-5 h-5 -rotate-45" />
             </div>
             <div>

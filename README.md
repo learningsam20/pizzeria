@@ -8,6 +8,8 @@
 
 A full-stack dine-in pizzeria platform — self-ordering at the table, live kitchen ops, executive analytics, and an AI assistant that knows your menu.
 
+*Digital App by SliceMatic*
+
 <br />
 
 [![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
@@ -209,7 +211,7 @@ If the mic shows “Listening” but nothing submits, ensure you're on a support
 
 <div align="center">
 
-**Slice of Heaven Pizzeria Ltd.** · © 2026
+**Slice of Heaven Pizzeria Ltd.** · © 2026 · Digital App by SliceMatic
 
 *Built with care for the table, the kitchen, and the bottom line.*
 

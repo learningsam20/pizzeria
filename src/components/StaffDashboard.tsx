@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { OrderWithItems, Order, DineInTable, tableQrNumber, AppSettings } from '../types';
 import { dbService } from '../lib/dbService';
-import { orderDisplayStatus, billSummaryLines } from '../lib/orderUtils';
+import { orderDisplayStatus, billSummaryLines, getOrderStaffLabel } from '../lib/orderUtils';
 import { bulkDiscountLabel, gstLabel, DEFAULT_APP_SETTINGS } from '../lib/appSettings';
 import BillSummary from './BillSummary';
 import OrderCombosDisplay from './OrderCombosDisplay';
@@ -332,12 +332,16 @@ export default function StaffDashboard({ orders, tables, appSettings = DEFAULT_A
                         {statusLabel(status)}
                       </span>
                     </div>
-                    <div className="flex items-center space-x-2 mt-1 font-sans">
+                    <div className="flex items-center space-x-2 mt-1 font-sans flex-wrap gap-y-0.5">
                       <span className="font-serif italic text-noir-gold text-xs">{order.table_name}</span>
                       <span className="text-noir-dim">•</span>
                       <span className="text-noir-muted text-xs font-medium">
                         {order.customer_name || 'Guest'}
                         {order.customer_phone && !isWalkInPhone(order.customer_phone) ? ` (${order.customer_phone})` : ''}
+                      </span>
+                      <span className="text-noir-dim">•</span>
+                      <span className={`text-xs ${order.staff_id ? 'text-noir-muted' : 'text-noir-dim italic'}`}>
+                        Staff: {getOrderStaffLabel(order)}
                       </span>
                     </div>
                   </div>
@@ -583,7 +587,12 @@ export default function StaffDashboard({ orders, tables, appSettings = DEFAULT_A
               <h3 className="font-serif italic text-noir-gold text-base flex items-center gap-1.5">
                 <Send className="w-5 h-5 text-purple-400" /> Bill — Order #{billingOrder.id}
               </h3>
-              <p className="text-xs text-noir-muted mt-1">{billingOrder.table_name} · {billingOrder.customer_name || 'Guest'}</p>
+              <p className="text-xs text-noir-muted mt-1">
+                {billingOrder.table_name} · {billingOrder.customer_name || 'Guest'}
+              </p>
+              <p className="text-xs text-noir-muted mt-0.5">
+                Staff: <span className="text-noir-text font-medium">{getOrderStaffLabel(billingOrder)}</span>
+              </p>
             </div>
 
             <div className="bg-noir-panel border border-noir-border rounded-xl p-3">

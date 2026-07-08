@@ -1,6 +1,6 @@
 import { Receipt, X } from 'lucide-react';
 import type { OrderWithItems } from '../types';
-import { billSummaryLines } from '../lib/orderUtils';
+import { billSummaryLines, getOrderStaffLabel } from '../lib/orderUtils';
 import BillSummary from './BillSummary';
 import OrderCombosDisplay from './OrderCombosDisplay';
 
@@ -34,6 +34,9 @@ export default function OrderBillModal({ order, currency = 'INR', onClose }: Ord
             <p className="text-xs text-noir-muted mt-1">
               {order.table_name} · {order.customer_name || 'Guest'}
               {order.customer_phone ? ` · ${order.customer_phone}` : ''}
+            </p>
+            <p className="text-xs text-noir-muted mt-0.5">
+              Staff: <span className="text-noir-text font-medium">{getOrderStaffLabel(order)}</span>
             </p>
             <p className="text-[10px] text-noir-dim font-mono mt-1 uppercase tracking-wide">
               {statusLabel} · {order.payment_mode} · {new Date(order.created_at).toLocaleString()}

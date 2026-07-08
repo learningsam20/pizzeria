@@ -874,6 +874,19 @@ ${contextualData}
     if (data.is_active === false) throw new Error("Admin access required.");
   }
 
+  function bearerToken(req: express.Request): string | null {
+    const header = req.headers.authorization;
+    if (!header?.startsWith("Bearer ")) return null;
+    return header.slice(7).trim();
+  }
+
+  async function getAuthenticatedUser(accessToken: string) {
+    const admin = getSupabaseAdminClient();
+    const { data: { user }, error } = await admin.auth.getUser(accessToken);
+    if (error || !user) throw new Error("Invalid or expired session. Please sign in again.");
+    return user;
+  }
+
   async function assertUniqueCustomerPhone(
     sb: ReturnType<typeof getSupabaseDataClient>,
     phone: string,
@@ -1382,6 +1395,32 @@ ${contextualData}
   });
 
   // Orders
+  async function loadStaffNameMap(staffIds: string[]) {
+    const map = new Map<string, string>();
+    if (!staffIds.length) return map;
+    const sb = getSupabaseDataClient();
+    const { data, error } = await sb.from("profiles").select("id, display_name, email").in("id", staffIds);
+    if (error) throw error;
+    for (const profile of data || []) {
+      map.set(profile.id, profile.display_name?.trim() || profile.email || "Unknown staff");
+    }
+    return map;
+  }
+
+  async function attachStaffLabels<T extends { staff_id?: string | null }>(orders: T[]) {
+    const staffIds = [...new Set(orders.map((o) => o.staff_id).filter((id): id is string => Boolean(id)))];
+    const staffMap = await loadStaffNameMap(staffIds);
+    return orders.map((o) => ({
+      ...o,
+      staff_name: o.staff_id ? (staffMap.get(o.staff_id) ?? null) : null,
+    }));
+  }
+
+  async function attachStaffLabel<T extends { staff_id?: string | null }>(order: T) {
+    const [withStaff] = await attachStaffLabels([order]);
+    return withStaff;
+  }
+
   async function fetchAllOrdersWithItems(): Promise<OrderWithItems[]> {
     const sb = getSupabaseDataClient();
     const { data: orders, error: ordersErr } = await sb
@@ -1389,11 +1428,12 @@ ${contextualData}
     if (ordersErr) throw ordersErr;
     const { data: items, error: itemsErr } = await sb.from("order_items").select("*");
     if (itemsErr) throw itemsErr;
-    return (orders || []).map((o: any) => {
+    const mapped = (orders || []).map((o: any) => {
       const table_name = resolveTableName(o);
       const { table_info: _ti, ...fields } = o;
       return { ...fields, table_name, items: (items || []).filter((i: any) => i.order_id === o.id) };
     });
+    return attachStaffLabels(mapped) as Promise<OrderWithItems[]>;
   }
 
   app.get("/api/orders", async (_req, res) => {
@@ -1513,7 +1553,7 @@ Rules:
       const { data: items } = await sb.from("order_items").select("*").eq("order_id", orderId);
       const table_name = resolveTableName(order);
       const { table_info: _ti, ...fields } = order;
-      res.json({ ...fields, table_name, items: items || [] });
+      res.json(await attachStaffLabel({ ...fields, table_name, items: items || [] }));
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
@@ -1614,7 +1654,7 @@ Rules:
         .update({ is_in_use: true, updated_at: new Date().toISOString() })
         .eq("table_name", orderData.table_name);
 
-      res.json({ ...newOrder, table_name: orderData.table_name, items: newItems });
+      res.json(await attachStaffLabel({ ...newOrder, table_name: orderData.table_name, items: newItems }));
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
@@ -1664,7 +1704,7 @@ Rules:
         const kept = await updateOrderRow(sb, orderId, updates);
         const { data: items } = await sb.from("order_items").select("*").eq("order_id", orderId);
         const table_name = resolveTableName(current, kept.table_id);
-        return res.json({ ...kept, status: "ready_to_bill", table_name, items: items || [] });
+        return res.json(await attachStaffLabel({ ...kept, status: "ready_to_bill", table_name, items: items || [] }));
       }
 
       updates.status = newStatus;
@@ -1701,15 +1741,14 @@ Rules:
 
       if (newStatus === "delivered") {
         appendOrderLog(updated, items || [], table_name);
+        const payload = await attachStaffLabel({ ...updated, table_name, items: items || [] });
         return res.json({
-          ...updated,
-          table_name,
-          items: items || [],
+          ...payload,
           confirmationMessage: `Payment confirmed via ${paymentMode}. Order #${orderId} is complete. Thank you!`,
         });
       }
 
-      res.json({ ...updated, table_name, items: items || [] });
+      res.json(await attachStaffLabel({ ...updated, table_name, items: items || [] }));
     } catch (e: any) {
       console.error("Order status PATCH error:", e);
       const msg = e.message || e.details || "Status update failed.";
@@ -1718,6 +1757,27 @@ Rules:
   });
 
   // Profiles
+  app.get("/api/profiles/me", async (req, res) => {
+    try {
+      const token = bearerToken(req);
+      if (!token) return res.status(401).json({ error: "Authorization Bearer token required." });
+
+      const user = await getAuthenticatedUser(token);
+      const sb = getSupabaseDataClient();
+      const { data, error } = await sb.from("profiles").select("*").eq("id", user.id).maybeSingle();
+      if (error) throw error;
+      if (!data) {
+        return res.status(404).json({
+          error: "No staff profile exists for this account. Ask an admin to invite you or link your auth user in profiles.",
+        });
+      }
+      res.json(data);
+    } catch (e: any) {
+      const msg = e.message || "Unable to load profile.";
+      res.status(/invalid|expired|authorization/i.test(msg) ? 401 : 500).json({ error: msg });
+    }
+  });
+
   app.get("/api/profiles", async (_req, res) => {
     try {
       const sb = getSupabaseDataClient();

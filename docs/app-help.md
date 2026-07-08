@@ -2,6 +2,8 @@
 
 Welcome to the Slice of Heaven ordering and operations platform. This guide explains how to use the app as a **customer**, **staff** member, or **admin**. The **Support Chat** tab uses this same content to answer questions.
 
+*Digital App by SliceMatic* — hover the pizza logo in the header to see this attribution.
+
 ---
 
 ## Getting started (daily workflow)
@@ -157,3 +159,5 @@ The Analytics tab refreshes automatically while open. Use **Refresh analytics** 
 ## Need more help?
 
 Use the **Support Chat** tab for questions about orders, menu, billing, and app features. For account or login issues, contact your restaurant administrator.
+
+**Digital App by SliceMatic**

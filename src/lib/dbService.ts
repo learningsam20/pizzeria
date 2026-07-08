@@ -6,8 +6,11 @@ import { normalizeCustomerEmail } from './inputValidation';
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
     ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options?.headers || {}),
+    },
   });
   const contentType = res.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
@@ -29,6 +32,13 @@ export const dbService = {
   // ── PROFILES ──────────────────────────────────────────────────────────────
   async getProfiles(): Promise<Profile[]> {
     return api<Profile[]>('/api/profiles');
+  },
+
+  /** Load the signed-in user's profile via server (bypasses RLS; uses JWT). */
+  async fetchMyProfile(accessToken: string): Promise<Profile> {
+    return api<Profile>('/api/profiles/me', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
   },
 
   async createProfile(profile: Omit<Profile, 'created_at' | 'updated_at'>): Promise<Profile> {

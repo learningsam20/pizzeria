@@ -17,6 +17,7 @@ import { dbService } from '../lib/dbService';
 import { buildAdminRecommendations, buildRecommendationAnalytics, mergeRecommendations, CATEGORY_LABELS, IMPACT_LABELS } from '../lib/adminRecommendations';
 import type { AdminRecommendation, RecommendationCategory } from '../lib/adminRecommendations';
 import { filterOrdersForSearch, formatOrdersExportDocument } from '../lib/orderFormat';
+import { getOrderStaffLabel } from '../lib/orderUtils';
 import OrderCombosDisplay from './OrderCombosDisplay';
 import ActiveToggle from './ActiveToggle';
 import OrderBillModal from './OrderBillModal';
@@ -1897,6 +1898,7 @@ export default function AdminDashboard({
                   <th className="px-4 py-3">Order</th>
                   <th className="px-4 py-3">Customer</th>
                   <th className="px-4 py-3">Table</th>
+                  <th className="px-4 py-3">Staff</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Items</th>
                   <th className="px-4 py-3 text-right">Total</th>
@@ -1922,6 +1924,11 @@ export default function AdminDashboard({
                     </td>
                     <td className="px-4 py-3 text-noir-muted">{o.table_name}</td>
                     <td className="px-4 py-3">
+                      <span className={`text-noir-text font-medium ${!o.staff_id ? 'text-noir-dim italic' : ''}`}>
+                        {getOrderStaffLabel(o)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
                       <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase border bg-noir-highlight text-noir-muted border-noir-border">
                         {o.status.replace(/_/g, ' ')}
                       </span>
@@ -1934,7 +1941,7 @@ export default function AdminDashboard({
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-noir-dim italic">No orders match your filters.</td>
+                    <td colSpan={8} className="px-4 py-10 text-center text-noir-dim italic">No orders match your filters.</td>
                   </tr>
                 )}
               </tbody>

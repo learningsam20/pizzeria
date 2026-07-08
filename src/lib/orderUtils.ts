@@ -43,3 +43,10 @@ export function billSummaryLines(order: Pick<OrderWithItems, 'items' | 'subtotal
     total: Number(order.total_payable),
   };
 }
+
+/** Display label for the staff member linked to an order. */
+export function getOrderStaffLabel(order: Pick<Order, 'staff_id' | 'staff_name'>): string {
+  const name = order.staff_name?.trim();
+  if (name) return name;
+  return 'Unassigned';
+}

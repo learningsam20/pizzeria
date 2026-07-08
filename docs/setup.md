@@ -88,6 +88,8 @@ Link the user to `profiles` with `role = admin` and `is_active = true`. After th
 
 Run `docs/migrations/002_staff_active_and_customer_phone.sql` in the Supabase SQL editor if staff deactivate or unique customer phone checks fail (missing column/index).
 
+Run `docs/migrations/003_profiles_rls.sql` after enabling RLS on `profiles` so authenticated users can read their own row. **Staff login** loads profiles via `GET /api/profiles/me` (server service role) and does not depend on client-side RLS.
+
 ---
 
 ## Menu data (`input_data/`)

@@ -92,6 +92,7 @@ export function formatOrderLogBlock(order: OrderWithItems, opts?: { statusLabel?
     ` Customer     ${order.customer_name || 'Guest'}`,
     ` Phone        ${order.customer_phone || '—'}`,
     ` Table        ${order.table_name}`,
+    ` Staff        ${order.staff_name?.trim() || 'Unassigned'}`,
     ` Payment      ${order.payment_mode}`,
     ` Source       ${order.order_source}`,
     order.cancellation_reason ? ` Cancel reason ${order.cancellation_reason}` : null,
@@ -142,6 +143,7 @@ export function filterOrdersForSearch(orders: OrderWithItems[], query: string): 
       o.table_name,
       o.status,
       o.payment_mode,
+      o.staff_name,
       ...o.items.map(i => i.name),
     ].filter(Boolean).join(' ').toLowerCase();
     return hay.includes(q);
